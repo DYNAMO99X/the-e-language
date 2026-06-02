@@ -1,0 +1,95 @@
+{
+  "name": "e-lang",
+  "displayName": "E Language",
+  "description": "Syntax highlighting and run support for E, an English-like programming language.",
+  "version": "0.1.0",
+  "publisher": "personal",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "e",
+    "language",
+    "turtle"
+  ],
+  "icon": "icon.png",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "local",
+    "path": "."
+  },
+  "activationEvents": [
+    "onLanguage:e"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "e",
+        "aliases": ["E", "e"],
+        "extensions": [".e"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "e",
+        "scopeName": "source.e",
+        "path": "./syntaxes/e.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "title": "E Language",
+      "properties": {
+        "e.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "The Python executable used to run .e files."
+        },
+        "e.scriptPath": {
+          "type": "string",
+          "default": "./e.py",
+          "description": "Path to the E interpreter (e.py). Can be relative to the workspace or absolute."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "e.runFile",
+        "title": "E: Run File",
+        "category": "E",
+        "icon": "$(play)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "e.runFile",
+        "key": "ctrl+f5",
+        "when": "editorTextFocus && editorLangId == 'e'"
+      }
+    ],
+    "menus": {
+      "editor/title/run": [
+        {
+          "command": "e.runFile",
+          "when": "editorLangId == 'e'",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -p ./",
+    "package": "vsce package",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.3.0",
+    "vsce": "^2.15.0"
+  }
+}

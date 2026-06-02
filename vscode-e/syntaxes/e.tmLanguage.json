@@ -1,0 +1,136 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "E",
+  "scopeName": "source.e",
+  "fileTypes": ["e"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#strings-single" },
+    { "include": "#strings-backtick" },
+    { "include": "#numbers" },
+    { "include": "#constants" },
+    { "include": "#keywords-multiword" },
+    { "include": "#keywords" },
+    { "include": "#turtle-verbs" },
+    { "include": "#builtins" },
+    { "include": "#booleans" },
+    { "include": "#identifiers" }
+  ],
+  "repository": {
+    "comments": {
+      "name": "comment.line.double-dash.e",
+      "match": "--.*$"
+    },
+    "strings": {
+      "name": "string.quoted.double.e",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "name": "constant.character.escape.e", "match": "\\\\(.)" }
+      ]
+    },
+    "strings-single": {
+      "name": "string.quoted.single.e",
+      "begin": "'",
+      "end": "'",
+      "patterns": [
+        { "name": "constant.character.escape.e", "match": "\\\\(.)" }
+      ]
+    },
+    "strings-backtick": {
+      "name": "string.quoted.other.e",
+      "begin": "`",
+      "end": "`",
+      "patterns": [
+        { "name": "constant.character.escape.e", "match": "\\\\(.)" }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.e",
+      "match": "(?<![a-zA-Z_])-?\\d+(\\.\\d+)?(?![a-zA-Z_])"
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.nothing.e", "match": "\\bnothing\\b" }
+      ]
+    },
+    "booleans": {
+      "patterns": [
+        { "name": "constant.language.boolean.e", "match": "\\b(true|false)\\b" }
+      ]
+    },
+    "keywords-multiword": {
+      "patterns": [
+        {
+          "name": "keyword.control.comparison.e",
+          "match": "\\b(is greater than or equal to|is less than or equal to|is not equal to|is greater than|is less than|is equal to)\\b"
+        },
+        {
+          "name": "keyword.operator.arithmetic.e",
+          "match": "\\bdivided by\\b"
+        },
+        {
+          "name": "keyword.operator.turtle.e",
+          "match": "\\b(pen up|pen down|hide turtle|show turtle|erase all|go to)\\b"
+        },
+        {
+          "name": "keyword.other.e",
+          "match": "\\bwith added\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.e",
+          "match": "\\b(let|be|say|ask|if|else|then|end|while|repeat|for|each|in|return)\\b"
+        },
+        {
+          "name": "keyword.control.loop.e",
+          "match": "\\btimes\\b"
+        },
+        {
+          "name": "keyword.operator.arithmetic-word.e",
+          "match": "\\b(plus|minus|times|mod)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.e",
+          "match": "\\b(and|or|not)\\b"
+        },
+        {
+          "name": "keyword.operator.comparison.e",
+          "match": "\\b(is|than|equal|greater|less|to)\\b"
+        }
+      ]
+    },
+    "turtle-verbs": {
+      "patterns": [
+        {
+          "name": "keyword.control.turtle.e",
+          "match": "\\b(turtle|move|make|set|goto)\\b"
+        },
+        {
+          "name": "variable.other.turtle-property.e",
+          "match": "\\b(pen|color|background|heading|position|size)\\b"
+        },
+        {
+          "name": "variable.other.turtle-direction.e",
+          "match": "\\b(forward|backward|left|right|up|down|show|hide|erase|all|go|home)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.e",
+          "match": "\\b(number|text|uppercase|lowercase|random)\\b"
+        }
+      ]
+    },
+    "identifiers": {
+      "name": "variable.other.e",
+      "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*\\b"
+    }
+  }
+}
