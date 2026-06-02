@@ -194,4 +194,4 @@ for the personal-project scope:
 
 ## License
 
-Personal project — use as you wish.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
