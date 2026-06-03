@@ -30,7 +30,7 @@ end
 ```bash
 python e.py examples/hello.e     # run a .e file
 python e.py                       # start the REPL
-python -m unittest discover tests # run all 214 unit tests
+python -m unittest discover tests # run all 301 unit tests
 ```
 
 ## Building a standalone Windows .exe
@@ -117,6 +117,7 @@ E/
 ├── build-extension.bat     # One-click build script (the VSCode ext)
 ├── install_win64.bat       # Per-user installer (no admin)
 ├── uninstall_e.bat         # Reverses install_win64.bat
+├── bundle.py               # Regenerates playground/e_bundle.py
 ├── src/                    # Interpreter implementation
 │   ├── lexer.py            # Source code -> tokens
 │   ├── parser.py           # Tokens -> AST
@@ -124,33 +125,17 @@ E/
 │   ├── ast_nodes.py        # AST node classes
 │   ├── tokens.py           # Token types
 │   ├── environment.py      # Scoped variable storage
-│   └── errors.py           # Friendly error messages
+│   ├── errors.py           # Friendly error messages
+│   ├── turtle_runtime.py   # Turtle graphics runtime
+│   ├── gui_runtime.py      # GUI window runtime (tkinter)
+│   ├── web.py              # HTTP GET/POST, JSON helpers
+│   └── repl_helpers.py     # REPL history, completion, colors
 ├── vscode-e/               # VSCode extension (syntax + run)
+├── playground/             # Web playground (Monaco + Pyodide)
 ├── examples/               # Sample .e programs
-├── tests/                  # Unit tests (214 tests)
+├── tests/                  # Unit tests (301 tests)
 ├── docs/                   # language_tour.md, grammar.md, bridge_to_python.md
-│   └── lessons/            # 14-lesson beginner curriculum + capstone
-└── README.md
-```
-E/
-├── e.py                    # Entry point
-├── e.spec                  # PyInstaller build config
-├── e.ico                   # Icon used by the .exe
-├── build.bat               # One-click build script
-├── install_win64.bat       # Per-user installer (no admin)
-├── uninstall_e.bat         # Reverses install_win64.bat
-├── src/                    # Interpreter implementation
-│   ├── lexer.py            # Source code -> tokens
-│   ├── parser.py           # Tokens -> AST
-│   ├── interpreter.py      # AST -> execution
-│   ├── ast_nodes.py        # AST node classes
-│   ├── tokens.py           # Token types
-│   ├── environment.py      # Scoped variable storage
-│   └── errors.py           # Friendly error messages
-├── examples/               # Sample .e programs
-├── tests/                  # Unit tests (214 tests)
-├── docs/                   # language_tour.md, grammar.md, bridge_to_python.md
-│   └── lessons/            # 14-lesson beginner curriculum + capstone
+│   └── lessons/            # 19-lesson beginner curriculum + capstone
 └── README.md
 ```
 
@@ -160,7 +145,7 @@ E/
   walkthrough of the entire language with examples (includes a full
   section on the turtle).
 - **[docs/grammar.md](docs/grammar.md)** — Formal grammar reference.
-- **[docs/lessons/](docs/lessons/)** — A 14-lesson curriculum + capstone
+- **[docs/lessons/](docs/lessons/)** — A 19-lesson curriculum + capstone
   for teaching E to beginners. Each lesson has a teacher's guide and
   a matching starter `.e` file.
 - **[docs/bridge_to_python.md](docs/bridge_to_python.md)** — A
@@ -190,11 +175,15 @@ for the personal-project scope:
 - Built-in functions: ask, number, text, uppercase, lowercase, random
 - Three equivalent string delimiters: `"`, `'`, `` ` ``, with full escape support
 - Built-in turtle drawing (`let ada be turtle`, `move`, `make`, `set`, `goto`)
-- Interactive REPL with `Hi! Ready to code?` greeting
+- GUI windows: buttons, labels, text inputs, event handlers (`let win be window`)
+- Web requests: `get`, `post`, `status of`, `body of`, `timeout`
+- JSON parsing: `json parse`, `json keys`, `json value`, `json of`
+- Interactive REPL with history, tab completion, and colors
 - Single-file Windows `.exe` build (PyInstaller)
-- 214 unit tests across lexer, parser, interpreter, and turtle
+- 301 unit tests across lexer, parser, interpreter, turtle, GUI, and web
 - Friendly English-style error messages
-- 14-lesson beginner curriculum + capstone (in `docs/lessons/`)
+- 19-lesson beginner curriculum + capstone (in `docs/lessons/`)
+- Web playground with Monaco editor and Pyodide
 - E-to-Python bridge document (in `docs/bridge_to_python.md`)
 
 ## License
