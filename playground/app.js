@@ -182,7 +182,14 @@ async function initMonaco() {
 }
 
 async function initPyodide() {
+    // Temporarily disable AMD loader to prevent Monaco/RequireJS from
+    // intercepting Pyodide's module loading (fixes stackframe 404).
+    const savedAmd = window.define?.amd;
+    if (savedAmd) window.define.amd = null;
+
     pyodide = await loadPyodide();
+
+    if (savedAmd) window.define.amd = savedAmd;
 
     // Load the E interpreter bundle
     const response = await fetch('e_bundle.py');
