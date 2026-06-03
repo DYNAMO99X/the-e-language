@@ -60,18 +60,18 @@ const E_LANG_CONFIG = {
 const EXAMPLES = {
     'Hello, World': `say "Hello, world!"`,
 
-    'Calculator': `-- Simple calculator (hardcoded values for playground)
-let num1 be 12
-let num2 be 4
+    'Calculator': `-- Calculator: English keywords OR symbol operators
+let a be 12
+let b be 4
 
-say "num1 = " , num1
-say "num2 = " , num2
-say ""
-say "Sum: " , (num1 plus num2)
-say "Difference: " , (num1 minus num2)
-say "Product: " , (num1 times num2)
-say "Division: " , (num1 divided by num2)
-say "Remainder: " , (num1 mod num2)`,
+-- Using English keywords
+say "English: " , (a plus b) , " / " , (a minus b) , " / " , (a times b)
+
+-- Using symbol operators
+say "Symbols: " , (a + b) , " / " , (a - b) , " / " , (a * b)
+
+-- Mixed
+say "Mixed:   " , (a + b * 2) , " = 12 + 4*2"`,
 
     'Guessing Game': `-- Guessing game (simulated, no input in browser)
 let secret be 42
