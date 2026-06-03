@@ -167,6 +167,10 @@ class TestSymbolComparisons(unittest.TestCase):
         self.assertEqual(run("say 5 != 6"), "true\n")
         self.assertEqual(run("say 5 != 5"), "false\n")
 
+    def test_not_equal_strict(self):
+        self.assertEqual(run("say 5 !== 6"), "true\n")
+        self.assertEqual(run("say 5 !== 5"), "false\n")
+
     def test_string_equality(self):
         self.assertEqual(run('say "hello" == "hello"'), "true\n")
         self.assertEqual(run('say "hello" = "hello"'), "true\n")

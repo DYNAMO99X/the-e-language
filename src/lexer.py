@@ -321,6 +321,8 @@ class Lexer:
                 self._advance()
                 if self._peek() == "=":
                     self._advance()
+                    if self._peek() == "=":
+                        self._advance()
                     self._add(TokenType.IS_NOT_EQUAL, "!=")
                 else:
                     raise LexerError(

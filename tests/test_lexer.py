@@ -111,6 +111,9 @@ class TestSymbolOperators(unittest.TestCase):
     def test_not_equal(self):
         self.assertEqual(lex("!="), [(TokenType.IS_NOT_EQUAL, "!=")])
 
+    def test_not_equal_strict(self):
+        self.assertEqual(lex("!=="), [(TokenType.IS_NOT_EQUAL, "!=")])
+
     def test_bang_alone_raises(self):
         from src.errors import LexerError
         with self.assertRaises(LexerError):
