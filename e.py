@@ -107,9 +107,18 @@ def run_source(source: str, name: str = "<repl>", turtle_mode: str = "auto") -> 
 
 def start_repl(turtle_mode: str = "auto") -> int:
     """Start the interactive E shell."""
-    print("Hi! Ready to code?")
     from src.interpreter import Interpreter
+    from src.repl_helpers import (
+        load_history, save_history_line, _input_with_history,
+        cmd_help, cmd_vars, cmd_clear, bold, cyan, dim, red,
+    )
+
+    history = load_history()
     interp = Interpreter("<repl>", turtle_mode=turtle_mode)
+
+    # Print greeting
+    print(bold(cyan("Hi! Ready to code?")) + dim("  (type  help  for a quick reference)"))
+    print()
 
     # Block-tracking keywords. We count these to decide if the user has
     # finished a multi-line statement. This is a simple heuristic — for
@@ -135,24 +144,44 @@ def start_repl(turtle_mode: str = "auto") -> int:
         return depth
 
     while True:
-        prompt = "... " if buffer else "> "
+        prompt = dim("... ") if buffer else cyan("e> ")
         try:
-            line = input(prompt)
+            line = _input_with_history(prompt, history)
         except (EOFError, KeyboardInterrupt):
             print()
             break
 
         stripped = line.strip()
+
         # Empty line: if no buffer, just continue; if buffer, ignore it
         if not stripped and not buffer:
             continue
+
         # Comment-only line: just skip
         if stripped.startswith("--"):
             continue
-        # Exit keywords only when not in the middle of a block
-        if not buffer and stripped in ("bye", "exit", "quit"):
-            print("E: bye!")
+
+        # Exit keywords (case-insensitive) only when not in a block
+        if not buffer and stripped.lower() in ("bye", "exit", "quit"):
+            print(dim("E: bye!"))
             break
+
+        # REPL commands (only when not in a block)
+        if not buffer:
+            low = stripped.lower()
+            if low == "help":
+                cmd_help()
+                continue
+            if low == "vars":
+                cmd_vars(interp.global_env)
+                continue
+            if low == "clear":
+                cmd_clear()
+                continue
+
+        # Add to history
+        history.append(stripped)
+        save_history_line(stripped)
 
         buffer.append(line)
 
