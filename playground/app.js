@@ -131,7 +131,9 @@ async function init() {
     const msgs = [
         'Warming up the E interpreter...',
         'Loading turtle graphics engine...',
-        'Almost ready to code!',
+        'Teaching the turtle new tricks...',
+        'Translating English to Python...',
+        'Almost ready to say hello!',
     ];
     const msgEl = document.getElementById('loading-msg');
     let msgIdx = 0;
@@ -142,7 +144,7 @@ async function init() {
             msgEl.textContent = msgs[msgIdx];
             msgEl.style.opacity = '1';
         }, 300);
-    }, 1800);
+    }, 2200);
 
     // Initialize Monaco Editor
     await initMonaco();
