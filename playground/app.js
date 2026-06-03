@@ -237,6 +237,65 @@ function setupEventListeners() {
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !helpModal.classList.contains('hidden')) closeHelp();
     });
+
+    // Resizable dividers
+    initDividers();
+}
+
+// ========== Resizable Dividers ==========
+function initDividers() {
+    const dividerV = document.getElementById('divider-v');
+    const dividerH = document.getElementById('divider-h');
+    const editorPanel = document.querySelector('.editor-panel');
+    const rightPanels = document.querySelector('.right-panels');
+    const turtlePanel = document.querySelector('.turtle-panel');
+    const outputPanel = document.querySelector('.output-panel');
+
+    function startDrag(divider, direction) {
+        divider.classList.add('active');
+        document.body.classList.add(direction === 'col' ? 'dragging-col' : 'dragging-row');
+
+        function onMove(e) {
+            const clientXY = direction === 'col' ? e.clientX : e.clientY;
+            const mainRect = document.querySelector('main').getBoundingClientRect();
+
+            if (direction === 'col') {
+                const offset = clientXY - mainRect.left;
+                const total = mainRect.width;
+                const minPx = 200;
+                const pct = Math.max(minPx / total * 100, Math.min((total - minPx - 5) / total * 100, offset / total * 100));
+                editorPanel.style.flex = '0 0 ' + pct + '%';
+                rightPanels.style.flex = '1';
+            } else {
+                const mainTop = mainRect.top;
+                const mainH = mainRect.height;
+                const dividerH = divider.offsetHeight;
+                const headerH = divider.previousElementSibling.querySelector('.panel-header').offsetHeight;
+                const offset = clientXY - mainTop - headerH;
+                const minT = 80;
+                const minO = 60;
+                const tPct = Math.max(minT / mainH * 100, Math.min((mainH - minO - dividerH) / mainH * 100, offset / mainH * 100));
+                turtlePanel.style.flex = '0 0 ' + tPct + '%';
+                outputPanel.style.flex = '1';
+            }
+
+            if (editor && editor.layout) editor.layout();
+        }
+
+        function onUp() {
+            divider.classList.remove('active');
+            document.body.classList.remove('dragging-col', 'dragging-row');
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            if (editor && editor.layout) editor.layout();
+        }
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    }
+
+    dividerV.addEventListener('mousedown', (e) => { e.preventDefault(); startDrag(dividerV, 'col'); });
+    dividerH.addEventListener('mousedown', (e) => { e.preventDefault(); startDrag(dividerH, 'row'); });
 }
 
 // ========== Core Functions ==========
