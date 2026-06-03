@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bumped CI actions to Node.js 24-compatible versions (`checkout@v5`, `setup-python@v6`) before the June 16, 2026 deadline
 - Pinned Windows CI runner to `windows-2025-vs2026` to stop silent redirect notices
 
+### Changed
+- Added clarification in README that this E is not the 1997 E language by Electric Communities
+
 ## [0.1.0] - 2026-06-02
 
 ### Added
