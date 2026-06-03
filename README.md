@@ -7,6 +7,11 @@
 E is a tiny, easy-to-read programming language designed to feel like you're
 writing instructions in plain English. No semicolons. No braces. No mystery.
 
+> **Note:** This is not the [1997 E language](https://en.wikipedia.org/wiki/E_(programming_language))
+> by Electric Communities (Mark S. Miller, Douglas Crockford, et al.), which
+> was a Java extension for secure distributed computing. This E is a
+> separate, beginner-friendly language built in Python.
+
 ```e
 let name be ask "What is your name? "
 let age be ask "How old are you? "
