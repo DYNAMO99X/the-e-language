@@ -23,8 +23,95 @@
                 <option value="light">☀ Light</option>
                 <option value="teal">🎨 Teal</option>
             </select>
+            <button id="help-btn" title="About E Playground">?</button>
         </div>
     </header>
+
+    <div id="help-modal" class="modal hidden">
+        <div class="modal-backdrop"></div>
+        <div class="modal-content">
+            <button class="modal-close" title="Close">&times;</button>
+            <h2>E Playground</h2>
+            <p class="modal-subtitle">Try the E programming language in your browser</p>
+
+            <div class="modal-section">
+                <h3>What is E?</h3>
+                <p>E is an English-like interpreted language designed for beginners. No semicolons, no braces — just plain English.</p>
+                <pre><code>say "Hello, world!"
+let name be "Ada"
+say "Hi, " , name</code></pre>
+            </div>
+
+            <div class="modal-section">
+                <h3>Playground Limitations</h3>
+                <p>This browser playground runs E via Pyodide (Python in WebAssembly). Some features are restricted:</p>
+                <ul>
+                    <li><strong>Input</strong> — <code>ask</code> does not work (no stdin in browser)</li>
+                    <li><strong>Window turtle</strong> — only headless/text mode is available</li>
+                    <li><strong>Performance</strong> — slower than the native Python version</li>
+                </ul>
+            </div>
+
+            <div class="modal-section">
+                <h3>Get the Full Experience</h3>
+                <p>Download E for all features: turtle graphics window, interactive REPL, <code>ask</code> input, Windows installer, and more.</p>
+                <div class="modal-actions">
+                    <a href="https://github.com/DYNAMO99X/the-e-language/releases" target="_blank" class="modal-btn primary">
+                        Download E (.exe)
+                    </a>
+                    <a href="https://github.com/DYNAMO99X/the-e-language" target="_blank" class="modal-btn secondary">
+                        View Source on GitHub
+                    </a>
+                </div>
+            </div>
+
+            <div class="modal-section">
+                <h3>Quick Reference</h3>
+                <div class="modal-columns">
+                    <div>
+                        <h4>Variables</h4>
+                        <pre><code>let x be 10
+let name be "E"</code></pre>
+                        <h4>Output</h4>
+                        <pre><code>say "Hello"
+say x</code></pre>
+                        <h4>Math</h4>
+                        <pre><code>x plus 5
+x minus 2
+x times 3
+x divided by 2
+x mod 3</code></pre>
+                    </div>
+                    <div>
+                        <h4>Conditionals</h4>
+                        <pre><code>if x is greater than 5 then
+    say "big"
+else
+    say "small"
+end</code></pre>
+                        <h4>Loops</h4>
+                        <pre><code>repeat 5 times
+    say "hi"
+end
+
+for each item in mylist
+    say item
+end</code></pre>
+                        <h4>Functions</h4>
+                        <pre><code>to greet who
+    say "Hi, " , who
+end
+greet "World"</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <p>E is open source under the MIT license.</p>
+                <a href="https://github.com/DYNAMO99X/the-e-language" target="_blank">github.com/DYNAMO99X/the-e-language</a>
+            </div>
+        </div>
+    </div>
 
     <main>
         <div class="panel editor-panel">

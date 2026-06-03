@@ -221,6 +221,22 @@ function setupEventListeners() {
         document.getElementById('output').innerHTML = '';
     });
     document.getElementById('clear-turtle').addEventListener('click', clearTurtleCanvas);
+
+    // Help modal
+    const helpBtn = document.getElementById('help-btn');
+    const helpModal = document.getElementById('help-modal');
+    const modalBackdrop = helpModal.querySelector('.modal-backdrop');
+    const modalClose = helpModal.querySelector('.modal-close');
+
+    function openHelp() { helpModal.classList.remove('hidden'); }
+    function closeHelp() { helpModal.classList.add('hidden'); }
+
+    helpBtn.addEventListener('click', openHelp);
+    modalClose.addEventListener('click', closeHelp);
+    modalBackdrop.addEventListener('click', closeHelp);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !helpModal.classList.contains('hidden')) closeHelp();
+    });
 }
 
 // ========== Core Functions ==========
