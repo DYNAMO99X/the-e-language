@@ -73,13 +73,13 @@ let score be 10   -- score is now 10
 
 ## Numbers and math
 
-E knows the usual math operations — all spelled out in English:
+E knows the usual math operations — spelled out in English or as symbols:
 
 ```e
-say 3 plus 4           -- 7
-say 10 minus 3         -- 7
-say 5 times 3          -- 15
-say 10 divided by 4    -- 2.5
+say 3 plus 4           -- 7       (or: 3 + 4)
+say 10 minus 3         -- 7       (or: 10 - 3)
+say 5 times 3          -- 15      (or: 5 * 3)
+say 10 divided by 4    -- 2.5     (or: 10 / 4)
 say 10 mod 3           -- 1 (remainder)
 ```
 

@@ -241,6 +241,30 @@ class TestInterpreterVariables(unittest.TestCase):
         '''
         self.assertEqual(run(src), "13\n30\n")
 
+    def test_symbol_plus(self):
+        src = 'say 3 + 4'
+        self.assertEqual(run(src), "7\n")
+
+    def test_symbol_minus(self):
+        src = 'say 10 - 3'
+        self.assertEqual(run(src), "7\n")
+
+    def test_symbol_times(self):
+        src = 'say 5 * 6'
+        self.assertEqual(run(src), "30\n")
+
+    def test_symbol_divide(self):
+        src = 'say 20 / 4'
+        self.assertEqual(run(src), "5\n")
+
+    def test_symbol_mixed_with_keywords(self):
+        src = 'say 2 + 3 times 4'
+        self.assertEqual(run(src), "14\n")
+
+    def test_symbol_complex_expr(self):
+        src = 'say (10 - 2) * 3 + 1 / 1'
+        self.assertEqual(run(src), "25\n")
+
     def test_undefined_variable(self):
         from src.errors import NameError_
         with self.assertRaises(NameError_):

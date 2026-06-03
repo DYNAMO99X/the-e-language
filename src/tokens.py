@@ -59,6 +59,10 @@ class TokenType(Enum):
     BY = auto()            # by
     MOD = auto()           # mod
 
+    # --- Math operators (as symbols) ---
+    STAR = auto()          # *
+    SLASH = auto()         # /
+
     # --- Symbols / punctuation ---
     COMMA = auto()         # ,  (concatenation)
     LPAREN = auto()        # (

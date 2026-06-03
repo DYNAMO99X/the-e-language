@@ -400,14 +400,15 @@ class Parser:
     def _parse_multiplicative(self) -> Optional[object]:
         left = self._parse_unary()
         while left is not None and self._peek().type in (
-                TokenType.TIMES, TokenType.DIVIDED, TokenType.MOD):
+                TokenType.TIMES, TokenType.STAR, TokenType.DIVIDED,
+                TokenType.SLASH, TokenType.MOD):
             op_tok = self._advance()
             right = self._parse_unary()
             if right is None:
                 raise self._error(f"After '{op_tok.value}' I expected a value")
-            if op_tok.type == TokenType.TIMES:
+            if op_tok.type in (TokenType.TIMES, TokenType.STAR):
                 op = "times"
-            elif op_tok.type == TokenType.DIVIDED:
+            elif op_tok.type in (TokenType.DIVIDED, TokenType.SLASH):
                 op = "divided by"
             else:
                 op = "mod"

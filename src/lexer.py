@@ -355,6 +355,15 @@ class Lexer:
             elif c == "]":
                 self._advance()
                 self._add(TokenType.RBRACKET, "]")
+            elif c == "+":
+                self._advance()
+                self._add(TokenType.PLUS, "+")
+            elif c == "*":
+                self._advance()
+                self._add(TokenType.STAR, "*")
+            elif c == "/":
+                self._advance()
+                self._add(TokenType.SLASH, "/")
             else:
                 raise LexerError(
                     f"I ran into a character I don't understand: '{c}' "

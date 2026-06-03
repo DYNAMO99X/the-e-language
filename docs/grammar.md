@@ -52,8 +52,8 @@ unary_logic   := "not" unary_logic | comparison
 comparison    := additive (comp_op additive)?
    where comp_op ∈ { is, is not equal to, is greater than [or equal to],
                      is less than [or equal to], =, ==, !=, >, <, >=, <= }
-additive      := multiplicative (("plus" | "minus") multiplicative)*
-multiplicative:= unary (("times" | "divided" "by" | "mod") unary)*
+additive      := multiplicative (("plus" | "+" | "minus" | "-") multiplicative)*
+multiplicative:= unary (("times" | "*" | "divided" "by" | "/" | "mod") unary)*
 unary         := "-" unary | postfix
 postfix       := size_of_or_primary ("at" call_arg | "with" call_arg "added")*
 size_of_or_primary
