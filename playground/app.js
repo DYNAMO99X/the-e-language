@@ -127,6 +127,23 @@ const THEMES = {
 
 // ========== Initialization ==========
 async function init() {
+    // Rotating loading messages
+    const msgs = [
+        'Warming up the E interpreter...',
+        'Loading turtle graphics engine...',
+        'Almost ready to code!',
+    ];
+    const msgEl = document.getElementById('loading-msg');
+    let msgIdx = 0;
+    const msgTimer = setInterval(() => {
+        msgEl.style.opacity = '0';
+        setTimeout(() => {
+            msgIdx = (msgIdx + 1) % msgs.length;
+            msgEl.textContent = msgs[msgIdx];
+            msgEl.style.opacity = '1';
+        }, 300);
+    }, 1800);
+
     // Initialize Monaco Editor
     await initMonaco();
 
@@ -141,6 +158,7 @@ async function init() {
     loadExample('Hello, World');
 
     // Hide loading overlay
+    clearInterval(msgTimer);
     document.getElementById('loading-overlay').classList.add('hidden');
 }
 

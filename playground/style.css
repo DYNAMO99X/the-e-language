@@ -271,6 +271,10 @@ body.dragging-row * { cursor: row-resize !important; user-select: none !importan
     display: none;
 }
 
+#loading-msg {
+    transition: opacity 0.3s;
+}
+
 .loading-spinner {
     width: 48px;
     height: 48px;
