@@ -75,11 +75,12 @@ say "Remainder: " , (num1 mod num2)`,
 
     'Guessing Game': `-- Guessing game (simulated, no input in browser)
 let secret be 42
+let i be 0
 say "The secret number is: " , secret
 say ""
 
 repeat 5 times
-    let i be repeat count
+    let i be i plus 1
     let guess be (i times 10)
     say "Guess #" , i , ": " , guess
 
