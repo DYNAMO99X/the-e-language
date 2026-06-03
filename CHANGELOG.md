@@ -5,7 +5,29 @@ All notable changes to the E language project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.1] - 2026-06-03
+## [0.3.0] - 2026-06-03
+
+### Added
+- GUI windows feature: create and control GUI windows from E code using tkinter under the hood
+  - `let win be window` — create a new GUI window
+  - `let btn be button "Click Me" on win` — create widgets (button, label, text input)
+  - `set win title to "My App"` / `set btn font size to 16` / `set lbl text to "Hello"` — set properties
+  - `make win place btn at row 0 and column 0` — grid layout
+  - `make win do on_click when btn clicked` — event handlers
+  - `show win` / `hide win` — show/hide windows
+  - `text of name` — read widget text values
+- Text-mode fallback for GUI (works headless, no display needed)
+- 29 new GUI tests (272 total)
+- `gui_runtime.py` — WindowManager + widget wrappers, tkinter backend + text-mode logging
+- `text of` multi-word keyword (tokenizer + parser support)
+
+### Fixed
+- Parser: `_expect` already advances, so `_parse_widget_create` no longer double-advances past `on`
+- Parser: `_parse_set_property` now handles `font size` (SIZE token, not just IDENT)
+- Parser: `_parse_place_widget` and `_parse_handle_event` read identifiers directly instead of `_parse_expression()` which greedily consumed `at`/`and`/`clicked`
+- Interpreter: `_exec_set` now falls back to GUI property setting when turtle lookup fails
+- Interpreter: `_exec_let` handles `WidgetCreate` statements directly
+- `gui_runtime.py`: `set_property` updates widget `text` in both text and window modes
 
 ### Added
 - `+`, `-`, `*`, `/` as arithmetic operators alongside English keywords (`plus`, `minus`, `times`, `divided by`)

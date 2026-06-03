@@ -46,6 +46,8 @@ from src.ast_nodes import (
     ListLiteral, ConcatExpression, BinaryOp, UnaryOp, CallExpression,
     IndexExpression, SizeExpression, WithAddedExpression,
     TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
+    WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
+    ShowWindow, HideWindow, TextOf,
 )
 from src.errors import ParseError, SourceLocation
 
@@ -60,6 +62,7 @@ _EXPR_START: Set[TokenType] = {
     TokenType.TRUE, TokenType.FALSE, TokenType.NOTHING,
     TokenType.LPAREN, TokenType.LBRACKET, TokenType.NOT,
     TokenType.SIZE,  # 'size of X'
+    TokenType.TEXT_OF,  # 'text of widget'
 }
 
 # Tokens that END a block (no statements after these in the current block).
@@ -70,6 +73,7 @@ _STMT_START: Set[TokenType] = {
     TokenType.LET, TokenType.SAY, TokenType.IF, TokenType.WHILE,
     TokenType.REPEAT, TokenType.FOR, TokenType.TO, TokenType.RETURN,
     TokenType.MOVE, TokenType.MAKE, TokenType.SET,
+    TokenType.SHOW, TokenType.HIDE,
 }
 
 
@@ -164,6 +168,10 @@ class Parser:
             return self._parse_make()
         if tok.type == TokenType.SET:
             return self._parse_set()
+        if tok.type == TokenType.SHOW:
+            return self._parse_show()
+        if tok.type == TokenType.HIDE:
+            return self._parse_hide()
 
         # Bare expression statement (e.g. a function call).
         expr = self._parse_expression()
@@ -175,12 +183,64 @@ class Parser:
         let_tok = self._advance()  # LET
         name_tok = self._expect(TokenType.IDENT, "After 'let' I expected a name for the variable")
         self._expect(TokenType.BE, "After the variable name I expected 'be'")
+
+        # `let win be window`
+        if self._check(TokenType.WINDOW):
+            self._advance()
+            return LetStatement(
+                name=name_tok.value,
+                value=WindowLiteral(location=let_tok.location),
+                location=let_tok.location,
+            )
+
+        # `let btn be button "Click Me" on win`
+        # `let lbl be label "Hello" on win`
+        # `let name be text input "Your name" on win`
+        if self._check(TokenType.BUTTON):
+            return self._parse_widget_create(let_tok, name_tok, "button")
+        if self._check(TokenType.LABEL):
+            return self._parse_widget_create(let_tok, name_tok, "label")
+        if self._check(TokenType.TEXT_INPUT):
+            return self._parse_widget_create(let_tok, name_tok, "text input")
+
         value = self._parse_expression()
         if value is None:
             raise self._error("After 'be' I expected a value for the variable")
         return LetStatement(
             name=name_tok.value,
             value=value,
+            location=let_tok.location,
+        )
+
+    def _parse_widget_create(self, let_tok, name_tok, widget_type) -> LetStatement:
+        """`let btn be button "Click Me" on win`"""
+        self._advance()  # consume widget type token
+        # Parse optional initial text argument
+        args = []
+        if self._peek().type in (TokenType.STRING, TokenType.NUMBER,
+                                  TokenType.IDENT, TokenType.LPAREN):
+            # Don't consume 'on' as an argument
+            if not (self._peek().type == TokenType.IDENT and
+                    str(self._peek().value).lower() == "on"):
+                arg = self._parse_expression()
+                if arg is not None:
+                    args.append(arg)
+        # Expect `on <window>`
+        on_tok = self._expect(TokenType.IDENT, f"After '{widget_type}' I expected 'on' and a window name")
+        if str(on_tok.value).lower() != "on":
+            raise self._error(f"After the widget text I expected 'on'")
+        parent = self._parse_expression()
+        if parent is None:
+            raise self._error(f"After 'on' I expected the window name")
+        return LetStatement(
+            name=name_tok.value,
+            value=WidgetCreate(
+                var_name=name_tok.value,
+                widget_type=widget_type,
+                args=args,
+                parent=parent,
+                location=let_tok.location,
+            ),
             location=let_tok.location,
         )
 
@@ -452,6 +512,12 @@ class Parser:
             if operand is None:
                 raise self._error("After 'size of' I expected a value")
             return SizeExpression(collection=operand, location=op_tok.location)
+        if self._check(TokenType.TEXT_OF):
+            op_tok = self._advance()
+            operand = self._parse_size_of_or_primary()  # right-associative
+            if operand is None:
+                raise self._error("After 'text of' I expected a widget name")
+            return TextOf(widget=operand, location=op_tok.location)
         return self._parse_primary()
 
     def _parse_primary(self) -> Optional[object]:
@@ -602,16 +668,35 @@ class Parser:
         )
 
     def _parse_make(self) -> Statement:
-        """`make ada <action>` — many forms, see docs/turtle.md."""
+        """`make ada <action>` — many forms, see docs/turtle.md.
+        Also handles GUI: `make win place btn at row 0 and column 0`
+        and `make win do on_click when btn clicked`.
+        """
         make_tok = self._advance()  # MAKE
-        name = self._expect_ident("After 'make' I expected a turtle's name")
+        name = self._expect_ident("After 'make' I expected a name")
+
+        # `make win do on_click when btn clicked`
+        if self._check(TokenType.DO):
+            return self._parse_handle_event(make_tok, name)
+
+        # `make win place btn at row 0 and column 0`
+        if self._check(TokenType.PLACE):
+            return self._parse_place_widget(make_tok, name)
 
         # `make ada goto 50 right and 20 up`
         if self._check(TokenType.GOTO):
             return self._parse_make_goto_relative(make_tok, name)
 
-        # Everything else starts with an IDENT. Look at it to dispatch.
+        # Everything else starts with an IDENT, HIDE, or SHOW.
         nxt = self._peek()
+        # Handle `make ada hide` / `make ada show` when hide/show are keywords
+        if nxt.type in (TokenType.HIDE, TokenType.SHOW):
+            word = nxt.type.name.lower()
+            self._advance()
+            return MakeStatement(
+                turtle_name=name, action=word, arg=None,
+                location=make_tok.location,
+            )
         if nxt.type != TokenType.IDENT:
             raise self._error(
                 f"After 'make {name}' I expected an action "
@@ -719,6 +804,45 @@ class Parser:
             f"go home, go to X and Y, draw circle, draw dot, speed, or goto."
         )
 
+    def _parse_place_widget(self, make_tok, window_name: str) -> PlaceWidget:
+        """`make win place btn at row 0 and column 0`"""
+        self._advance()  # consume PLACE
+        widget_name = self._expect_ident("After 'place' I expected a widget name")
+        widget = Identifier(name=widget_name, location=make_tok.location)
+        self._expect(TokenType.AT, "After the widget name I expected 'at'")
+        self._expect(TokenType.ROW, "After 'at' I expected 'row'")
+        row = self._parse_primary()
+        if row is None:
+            raise self._error("After 'row' I expected a number")
+        self._expect(TokenType.AND, "After the row I expected 'and'")
+        self._expect(TokenType.COLUMN, "After 'and' I expected 'column'")
+        col = self._parse_primary()
+        if col is None:
+            raise self._error("After 'column' I expected a number")
+        return PlaceWidget(
+            window=Identifier(name=window_name, location=make_tok.location),
+            widget=widget,
+            row=row,
+            column=col,
+            location=make_tok.location,
+        )
+
+    def _parse_handle_event(self, make_tok, window_name: str) -> HandleEvent:
+        """`make win do on_click when btn clicked`"""
+        self._advance()  # consume DO
+        handler_tok = self._expect(TokenType.IDENT, "After 'do' I expected a function name")
+        self._expect(TokenType.WHEN, "After the function name I expected 'when'")
+        widget_name = self._expect_ident("After 'when' I expected a widget name")
+        widget = Identifier(name=widget_name, location=make_tok.location)
+        self._expect(TokenType.CLICKED, "After the widget name I expected 'clicked'")
+        return HandleEvent(
+            window=Identifier(name=window_name, location=make_tok.location),
+            handler=handler_tok.value,
+            widget=widget,
+            event="clicked",
+            location=make_tok.location,
+        )
+
     def _parse_make_goto_relative(self, make_tok, name: str) -> GotoStatement:
         """`make ada goto 50 right and 20 up`"""
         self._advance()  # consume GOTO
@@ -754,11 +878,12 @@ class Parser:
             location=make_tok.location,
         )
 
-    def _parse_set(self) -> SetStatement:
-        """`set ada pen color to 'red'` / `set ada background to 'white'` / etc."""
+    def _parse_set(self) -> Statement:
+        """`set ada pen color to 'red'` / `set win title to "My App"` /
+        `set greet text to "Hello"` / `set btn color to "blue"`."""
         set_tok = self._advance()  # SET
-        name = self._expect_ident("After 'set' I expected a turtle's name")
-        # Look for `pen color`, `pen size`, or any other single-word property.
+        name = self._expect_ident("After 'set' I expected a name")
+        # Look for property name (multi-word supported for GUI).
         property_name = self._parse_set_property(name)
         self._expect(TokenType.TO, f"After the property name I expected 'to'")
         value = self._parse_expression()
@@ -771,31 +896,53 @@ class Parser:
             location=set_tok.location,
         )
 
-    def _parse_set_property(self, turtle_name: str) -> str:
-        """Read the property name after `set <turtle>`.
+    def _parse_set_property(self, obj_name: str) -> str:
+        """Read the property name after `set <obj>`.
 
-        Supports `pen color`, `pen size`, or any other single-word property
-        like `background`. The second word after `pen` may be a regular
-        identifier or the `size` keyword (used in `size of X`).
+        Supports `pen color`, `pen size` (turtles), or GUI properties like
+        `title`, `text`, `color`, `font size`.
         """
         first = self._peek()
         if first.type != TokenType.IDENT:
             raise self._error(
-                f"After 'set {turtle_name}' I expected a property name "
-                f"(like 'pen color', 'pen size', or 'background')"
+                f"After 'set {obj_name}' I expected a property name "
+                f"(like 'title', 'text', 'color', or 'font size')"
             )
         word = str(first.value).lower()
         if word == "pen":
             self._advance()
             second = self._peek()
-            # The second word may be an IDENT or a keyword (e.g. SIZE).
-            # Match on the textual value, not the token type.
             second_text = str(second.value).lower() if second.value is not None else ""
             if second_text not in ("color", "size"):
                 raise self._error(
-                    f"After 'set {turtle_name} pen' I expected 'color' or 'size'"
+                    f"After 'set {obj_name} pen' I expected 'color' or 'size'"
                 )
             self._advance()
             return f"pen {second_text}"
         self._advance()
+        # Check for multi-word properties: `font size`
+        if word == "font" and (self._check(TokenType.IDENT) or self._check(TokenType.SIZE)):
+            second = self._peek()
+            second_text = str(second.value).lower() if second.value is not None else ""
+            if second_text == "size":
+                self._advance()
+                return "font size"
         return word
+
+    # --- GUI statements ---
+
+    def _parse_show(self) -> ShowWindow:
+        """`show win`"""
+        show_tok = self._advance()  # SHOW
+        expr = self._parse_expression()
+        if expr is None:
+            raise self._error("After 'show' I expected a window name")
+        return ShowWindow(window=expr, location=show_tok.location)
+
+    def _parse_hide(self) -> HideWindow:
+        """`hide win`"""
+        hide_tok = self._advance()  # HIDE
+        expr = self._parse_expression()
+        if expr is None:
+            raise self._error("After 'hide' I expected a window name")
+        return HideWindow(window=expr, location=hide_tok.location)

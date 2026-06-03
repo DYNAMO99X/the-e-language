@@ -37,6 +37,10 @@ _MULTI_WORD: dict = {
     "divided": [
         (("by",), TokenType.DIVIDED),
     ],
+    "text": [
+        (("input",), TokenType.TEXT_INPUT),
+        (("of",), TokenType.TEXT_OF),
+    ],
 }
 
 # Single-word keywords. Every multi-word starter should ALSO be here, so the
@@ -80,6 +84,18 @@ _KEYWORDS: dict = {
     "make": TokenType.MAKE,
     "goto": TokenType.GOTO,
     "set": TokenType.SET,
+    # GUI keywords
+    "window": TokenType.WINDOW,
+    "label": TokenType.LABEL,
+    "button": TokenType.BUTTON,
+    "show": TokenType.SHOW,
+    "hide": TokenType.HIDE,
+    "place": TokenType.PLACE,
+    "when": TokenType.WHEN,
+    "clicked": TokenType.CLICKED,
+    "row": TokenType.ROW,
+    "column": TokenType.COLUMN,
+    "do": TokenType.DO,
 }
 
 

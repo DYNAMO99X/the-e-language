@@ -82,6 +82,21 @@ class TokenType(Enum):
     GOTO = auto()          # goto    ("make ada goto 50 right and 20 up")
     SET = auto()           # set     ("set ada pen color to 'red'")
 
+    # --- GUI windows ---
+    WINDOW = auto()        # window  (the type/value in "let win be window")
+    LABEL = auto()         # label   (widget type)
+    BUTTON = auto()        # button  (widget type)
+    TEXT_INPUT = auto()    # text input (widget type, multi-word)
+    SHOW = auto()          # show    ("show win")
+    HIDE = auto()          # hide    ("hide win")
+    PLACE = auto()         # place   ("make win place btn at row 0 and column 0")
+    WHEN = auto()          # when    ("make win do on_click when btn clicked")
+    CLICKED = auto()       # clicked (event name)
+    ROW = auto()           # row     (grid layout)
+    COLUMN = auto()        # column  (grid layout)
+    DO = auto()            # do      ("make win do on_click when btn clicked")
+    TEXT_OF = auto()       # text of ("let val be text of name")
+
     # --- Structural ---
     NEWLINE = auto()       # statement separator (optional in many places)
     EOF = auto()

@@ -14,10 +14,13 @@ from src.ast_nodes import (
     ListLiteral, ConcatExpression, BinaryOp, UnaryOp, CallExpression,
     IndexExpression, SizeExpression, WithAddedExpression,
     TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
+    WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
+    ShowWindow, HideWindow, TextOf,
 )
 from src.environment import Environment
 from src.errors import RuntimeError_, NameError_, TypeError_, SourceLocation
 from src.turtle_runtime import TurtleManager
+from src.gui_runtime import GuiManager
 
 
 # Internal control-flow signals. These are caught by the interpreter
@@ -48,6 +51,21 @@ class _turtle_factory_marker:
 
     def __repr__(self):
         return "<turtle-factory>"
+
+
+# Sentinel returned by WindowLiteral evaluation. _exec_let looks for this
+# to know it should create a fresh window bound to the let-name.
+class _window_factory_marker:
+    """Singleton sentinel: tells `_exec_let` to create a new window."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self):
+        return "<window-factory>"
 
 
 # Type name helpers for friendly error messages.
@@ -112,6 +130,7 @@ class Interpreter:
         self.global_env = Environment()
         self.output_buffer: List[str] = []
         self.turtles = TurtleManager(requested_mode=turtle_mode)
+        self.gui = GuiManager(requested_mode=turtle_mode)
         self._install_builtins()
 
     # ---------- public ----------
@@ -236,6 +255,16 @@ class Interpreter:
         if isinstance(stmt.value, TurtleLiteral):
             t = self.turtles.create(stmt.name)
             env.define(stmt.name, t)
+            return
+        # `let win be window` — create a new window and bind it to the name.
+        if isinstance(stmt.value, WindowLiteral):
+            self.gui.create_window(stmt.name)
+            env.define(stmt.name, stmt.name)
+            return
+        # `let btn be button "Click Me" on win` — create a widget.
+        if isinstance(stmt.value, WidgetCreate):
+            self._exec_widget_create(stmt.value, env)
+            env.define(stmt.name, stmt.name)
             return
         value = self._eval(stmt.value, env)
         env.define(stmt.name, value)
@@ -375,20 +404,91 @@ class Interpreter:
         t.goto_relative(x_amount, stmt.x_dir, y_amount, stmt.y_dir)
 
     def _exec_set(self, stmt: SetStatement, env: Environment) -> None:
-        t = self.turtles.get(stmt.turtle_name)
+        name = stmt.turtle_name
         prop = stmt.property
         value = self._eval(stmt.value, env)
-        if prop == "pen color":
-            t.set_pen_color(_to_text(value))
-        elif prop == "pen size":
-            t.set_pen_size(int(_to_number(value)))
-        elif prop == "background":
-            t.set_background(_to_text(value))
+
+        # Check if this is a turtle (has a turtle with this name)
+        try:
+            t = self.turtles.get(name)
+        except RuntimeError:
+            t = None
+        if t is not None:
+            if prop == "pen color":
+                t.set_pen_color(_to_text(value))
+            elif prop == "pen size":
+                t.set_pen_size(int(_to_number(value)))
+            elif prop == "background":
+                t.set_background(_to_text(value))
+            else:
+                raise RuntimeError_(
+                    f"I don't know how to set '{prop}' on a turtle.",
+                    stmt.location,
+                )
+            return
+
+        # Check if this is a GUI widget or window
+        try:
+            self.gui.set_property(name, prop, value)
+            return
+        except ValueError:
+            pass
+
+        raise RuntimeError_(
+            f"I don't know how to set '{prop}' on '{name}'.",
+            stmt.location,
+        )
+
+    def _exec_widget_create(self, stmt: WidgetCreate, env: Environment) -> None:
+        """`let btn be button "Click Me" on win`"""
+        text = ""
+        if stmt.args:
+            text = _to_text(self._eval(stmt.args[0], env))
+        parent_name = self._eval(stmt.parent, env)
+        if isinstance(parent_name, str):
+            pass  # already a string name
         else:
-            raise RuntimeError_(
-                f"I don't know how to set '{prop}' on a turtle.",
-                stmt.location,
-            )
+            parent_name = stmt.parent.name if hasattr(stmt.parent, 'name') else str(parent_name)
+        try:
+            self.gui.create_widget(stmt.widget_type, stmt.var_name, parent_name, text)
+        except ValueError as e:
+            raise RuntimeError_(str(e), stmt.location)
+
+    def _exec_handle_event(self, stmt: HandleEvent, env: Environment) -> None:
+        """`make win do on_click when btn clicked`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        widget_name = self._eval(stmt.widget, env)
+        if not isinstance(widget_name, str):
+            widget_name = stmt.widget.name if hasattr(stmt.widget, 'name') else str(widget_name)
+        self.gui.handle_event(window_name, stmt.handler, widget_name, stmt.event)
+
+    def _exec_place_widget(self, stmt: PlaceWidget, env: Environment) -> None:
+        """`make win place btn at row 0 and column 0`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        widget_name = self._eval(stmt.widget, env)
+        if not isinstance(widget_name, str):
+            widget_name = stmt.widget.name if hasattr(stmt.widget, 'name') else str(widget_name)
+        row = int(_to_number(self._eval(stmt.row, env)))
+        col = int(_to_number(self._eval(stmt.column, env)))
+        self.gui.place_widget(window_name, widget_name, row, col)
+
+    def _exec_show_window(self, stmt: ShowWindow, env: Environment) -> None:
+        """`show win`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        self.gui.show_window(window_name)
+
+    def _exec_hide_window(self, stmt: HideWindow, env: Environment) -> None:
+        """`hide win`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        self.gui.hide_window(window_name)
 
     _DISPATCH = {
         LetStatement: _exec_let,
@@ -404,6 +504,11 @@ class Interpreter:
         MakeStatement: _exec_make,
         GotoStatement: _exec_goto,
         SetStatement: _exec_set,
+        WidgetCreate: _exec_widget_create,
+        HandleEvent: _exec_handle_event,
+        PlaceWidget: _exec_place_widget,
+        ShowWindow: _exec_show_window,
+        HideWindow: _exec_hide_window,
     }
 
     # ---------- expressions ----------
@@ -584,6 +689,17 @@ class Interpreter:
         # create a new turtle with the bound name.
         return _turtle_factory_marker()
 
+    def _eval_window_literal(self, e: WindowLiteral, env):
+        """`window` — a marker sentinel; _exec_let detects it and creates the window."""
+        return _window_factory_marker()
+
+    def _eval_text_of(self, e: TextOf, env):
+        """`text of btn` — read the current text value of a widget."""
+        widget_name = self._eval(e.widget, env)
+        if not isinstance(widget_name, str):
+            widget_name = e.widget.name if hasattr(e.widget, 'name') else str(widget_name)
+        return self.gui.get_text_of(widget_name)
+
     def _eval_call(self, e: CallExpression, env):
         name = e.callee
         # Turtle property access: `ada heading` / `ada x` / `ada y`.
@@ -654,4 +770,6 @@ class Interpreter:
         SizeExpression: _eval_size,
         WithAddedExpression: _eval_with_added,
         TurtleLiteral: _eval_turtle_literal,
+        WindowLiteral: _eval_window_literal,
+        TextOf: _eval_text_of,
     }

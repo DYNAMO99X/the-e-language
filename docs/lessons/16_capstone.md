@@ -1,4 +1,4 @@
-# Lesson 14 — Capstone: a tiny text adventure
+# Lesson 16 — Capstone: a tiny text adventure
 
 **Goal:** Build a small but complete text adventure game. Use
 everything you've learned.
@@ -31,7 +31,7 @@ into it. Those are bigger. Save them for another time.
 
 ## Step 0: Plan
 
-From Lesson 13, the four-step plan:
+From Lesson 15, the four-step plan:
 
 1. **What does it do?** A text adventure where you wake up in a room
    and have to find a key to escape.
@@ -44,7 +44,7 @@ From Lesson 13, the four-step plan:
 
 ## Step 1: The tiny version
 
-Here's a tiny version that plays. Save it as `14_capstone.e`. Read
+Here's a tiny version that plays. Save it as `16_capstone.e`. Read
 it. Run it. Try to win.
 
 ```
@@ -270,15 +270,15 @@ After you've added at least two extensions:
 If you did the basic capstone, you used:
 - `let` and `say` (Lessons 1, 2)
 - `ask`, `number`, and `,` for string concat (Lessons 2, 3)
-- `if`, `else`, `is equal to` (Lesson 6)
-- `while` and `repeat` (Lesson 7)
-- Lists, `size of`, `at`, and `with ... added` (Lesson 8)
-- Functions with `to`/`end`, parameters, and `return` (Lesson 9)
-- `is not equal to` (Lesson 6)
+- `if`, `else`, `is equal to` (Lesson 7)
+- `while` and `repeat` (Lesson 8)
+- Lists, `size of`, `at`, and `with ... added` (Lesson 9)
+- Functions with `to`/`end`, parameters, and `return` (Lesson 10)
+- `is not equal to` (Lesson 7)
 - Recursion? Not directly, but `has_key` uses a loop with state,
-  which is the same idea. (Lesson 10)
-- All the debugging skills from Lesson 12
-- The four-step plan from Lesson 13
+  which is the same idea. (Lesson 11)
+- All the debugging skills from Lesson 14
+- The four-step plan from Lesson 15
 
 **That's the entire curriculum.** Every concept in E was used in
 this game. If you can build this, you can build a lot of things.

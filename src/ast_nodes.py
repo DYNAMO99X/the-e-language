@@ -282,3 +282,83 @@ class TurtlePropertyAccess(Expression):
     turtle_name: str
     property: str        # 'heading' | 'x' | 'y'
     location: Optional[SourceLocation] = None
+
+
+# --- GUI windows ------------------------------------------------------------
+
+@dataclass
+class WindowLiteral(Expression):
+    """`window` — used on the RHS of `let win be window` to create a new window."""
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class WidgetCreate(Statement):
+    """`let btn be button "Click Me" on win`
+    `let lbl be label "Hello" on win`
+    `let name be text input "Your name" on win`
+
+    `widget_type` is 'label', 'button', or 'text input'.
+    `args` holds the initial text (may be empty).
+    `parent` is the window expression.
+    """
+    var_name: str
+    widget_type: str         # 'label' | 'button' | 'text input'
+    args: List[Expression]
+    parent: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class SetProperty(Statement):
+    """`set win title to "My App"` / `set greet text to "Hello"` /
+    `set btn color to "blue"` / `set greet font size to 16`.
+
+    `prop` is the property name as a string (e.g. 'title', 'text', 'color',
+    'font size').
+    """
+    obj: Expression
+    prop: str
+    value: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class PlaceWidget(Statement):
+    """`make win place btn at row 0 and column 1`"""
+    window: Expression
+    widget: Expression
+    row: Expression
+    column: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class HandleEvent(Statement):
+    """`make win do on_click when btn clicked`"""
+    window: Expression
+    handler: str             # function name
+    widget: Expression
+    event: str               # 'clicked'
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ShowWindow(Statement):
+    """`show win`"""
+    window: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class HideWindow(Statement):
+    """`hide win`"""
+    window: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class TextOf(Expression):
+    """`text of name` — reads the current text value of a widget."""
+    widget: Expression
+    location: Optional[SourceLocation] = None

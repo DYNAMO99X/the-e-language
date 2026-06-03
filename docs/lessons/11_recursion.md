@@ -1,4 +1,4 @@
-# Lesson 10 — Functions calling themselves (recursion)
+# Lesson 11 — Functions calling themselves (recursion)
 
 **Goal:** Have a function call itself to solve a smaller version of
 the same problem.
@@ -153,7 +153,7 @@ Trees, hierarchies, searching, sorting — they all use recursion.
 
 ## Going further
 
-### Trees with turtle (preview of Lesson 11!)
+### Trees with turtle (preview of Lesson 12!)
 
 ```
 to tree depth length
@@ -174,7 +174,7 @@ move ada left 90
 tree 6, 100
 ```
 
-You don't need to fully understand this yet. Save it for Lesson 11
+You don't need to fully understand this yet. Save it for Lesson 12
 where we'll walk through how the recursion makes the picture.
 
 ## Exit ticket
@@ -186,5 +186,5 @@ Without looking:
 3. What would happen if the base case was wrong?
 4. Can you write `sum_to n` from scratch? (No peeking.)
 
-If you got the last one, you're in great shape for Lesson 11 — using
+If you got the last one, you're in great shape for Lesson 12 — using
 recursion to draw pictures!

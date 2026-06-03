@@ -4,6 +4,7 @@ This file combines all src/*.py modules into a single file so Pyodide
 can load it without needing a file system.
 """
 
+
 # --- src/errors.py ---
 """E-friendly error types and reporting.
 
@@ -65,6 +66,7 @@ def report_error(err: EError) -> None:
     print(err.format())
 
 
+
 # --- src/tokens.py ---
 """Token types and the Token dataclass for the E lexer.
 
@@ -78,6 +80,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any
 
+from src.errors import SourceLocation
 
 
 class TokenType(Enum):
@@ -149,6 +152,21 @@ class TokenType(Enum):
     GOTO = auto()          # goto    ("make ada goto 50 right and 20 up")
     SET = auto()           # set     ("set ada pen color to 'red'")
 
+    # --- GUI windows ---
+    WINDOW = auto()        # window  (the type/value in "let win be window")
+    LABEL = auto()         # label   (widget type)
+    BUTTON = auto()        # button  (widget type)
+    TEXT_INPUT = auto()    # text input (widget type, multi-word)
+    SHOW = auto()          # show    ("show win")
+    HIDE = auto()          # hide    ("hide win")
+    PLACE = auto()         # place   ("make win place btn at row 0 and column 0")
+    WHEN = auto()          # when    ("make win do on_click when btn clicked")
+    CLICKED = auto()       # clicked (event name)
+    ROW = auto()           # row     (grid layout)
+    COLUMN = auto()        # column  (grid layout)
+    DO = auto()            # do      ("make win do on_click when btn clicked")
+    TEXT_OF = auto()       # text of ("let val be text of name")
+
     # --- Structural ---
     NEWLINE = auto()       # statement separator (optional in many places)
     EOF = auto()
@@ -162,6 +180,7 @@ class Token:
 
     def __repr__(self) -> str:
         return f"Token({self.type.name}, {self.value!r}, L{self.location.line})"
+
 
 
 # --- src/lexer.py ---
@@ -182,6 +201,8 @@ Handles:
 from __future__ import annotations
 from typing import List, Optional
 
+from src.tokens import Token, TokenType
+from src.errors import LexerError, SourceLocation
 
 
 # Multi-word phrases. Key = the FIRST word (lowercase). Value is an ordered
@@ -201,6 +222,10 @@ _MULTI_WORD: dict = {
     ],
     "divided": [
         (("by",), TokenType.DIVIDED),
+    ],
+    "text": [
+        (("input",), TokenType.TEXT_INPUT),
+        (("of",), TokenType.TEXT_OF),
     ],
 }
 
@@ -245,6 +270,18 @@ _KEYWORDS: dict = {
     "make": TokenType.MAKE,
     "goto": TokenType.GOTO,
     "set": TokenType.SET,
+    # GUI keywords
+    "window": TokenType.WINDOW,
+    "label": TokenType.LABEL,
+    "button": TokenType.BUTTON,
+    "show": TokenType.SHOW,
+    "hide": TokenType.HIDE,
+    "place": TokenType.PLACE,
+    "when": TokenType.WHEN,
+    "clicked": TokenType.CLICKED,
+    "row": TokenType.ROW,
+    "column": TokenType.COLUMN,
+    "do": TokenType.DO,
 }
 
 
@@ -540,6 +577,7 @@ class Lexer:
         return self.tokens
 
 
+
 # --- src/ast_nodes.py ---
 """Abstract Syntax Tree (AST) node definitions for E.
 
@@ -554,6 +592,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Any, Optional
 
+from src.errors import SourceLocation
 
 
 # --- Program / statements ---------------------------------------------------
@@ -826,6 +865,87 @@ class TurtlePropertyAccess(Expression):
     location: Optional[SourceLocation] = None
 
 
+# --- GUI windows ------------------------------------------------------------
+
+@dataclass
+class WindowLiteral(Expression):
+    """`window` — used on the RHS of `let win be window` to create a new window."""
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class WidgetCreate(Statement):
+    """`let btn be button "Click Me" on win`
+    `let lbl be label "Hello" on win`
+    `let name be text input "Your name" on win`
+
+    `widget_type` is 'label', 'button', or 'text input'.
+    `args` holds the initial text (may be empty).
+    `parent` is the window expression.
+    """
+    var_name: str
+    widget_type: str         # 'label' | 'button' | 'text input'
+    args: List[Expression]
+    parent: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class SetProperty(Statement):
+    """`set win title to "My App"` / `set greet text to "Hello"` /
+    `set btn color to "blue"` / `set greet font size to 16`.
+
+    `prop` is the property name as a string (e.g. 'title', 'text', 'color',
+    'font size').
+    """
+    obj: Expression
+    prop: str
+    value: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class PlaceWidget(Statement):
+    """`make win place btn at row 0 and column 1`"""
+    window: Expression
+    widget: Expression
+    row: Expression
+    column: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class HandleEvent(Statement):
+    """`make win do on_click when btn clicked`"""
+    window: Expression
+    handler: str             # function name
+    widget: Expression
+    event: str               # 'clicked'
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ShowWindow(Statement):
+    """`show win`"""
+    window: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class HideWindow(Statement):
+    """`hide win`"""
+    window: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class TextOf(Expression):
+    """`text of name` — reads the current text value of a widget."""
+    widget: Expression
+    location: Optional[SourceLocation] = None
+
+
+
 # --- src/parser.py ---
 """Parser for the E language.
 
@@ -866,6 +986,8 @@ Statement grammar:
 from __future__ import annotations
 from typing import List, Optional, Set
 
+from src.tokens import Token, TokenType
+from src.ast_nodes import (
     Program, Statement, LetStatement, SayStatement, IfStatement,
     WhileStatement, RepeatStatement, ForEachStatement, FunctionDef,
     ReturnStatement, ExpressionStatement,
@@ -873,7 +995,10 @@ from typing import List, Optional, Set
     ListLiteral, ConcatExpression, BinaryOp, UnaryOp, CallExpression,
     IndexExpression, SizeExpression, WithAddedExpression,
     TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
+    WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
+    ShowWindow, HideWindow, TextOf,
 )
+from src.errors import ParseError, SourceLocation
 
 
 # Tokens that START an expression. Used to decide whether an IDENT is
@@ -886,6 +1011,7 @@ _EXPR_START: Set[TokenType] = {
     TokenType.TRUE, TokenType.FALSE, TokenType.NOTHING,
     TokenType.LPAREN, TokenType.LBRACKET, TokenType.NOT,
     TokenType.SIZE,  # 'size of X'
+    TokenType.TEXT_OF,  # 'text of widget'
 }
 
 # Tokens that END a block (no statements after these in the current block).
@@ -896,6 +1022,7 @@ _STMT_START: Set[TokenType] = {
     TokenType.LET, TokenType.SAY, TokenType.IF, TokenType.WHILE,
     TokenType.REPEAT, TokenType.FOR, TokenType.TO, TokenType.RETURN,
     TokenType.MOVE, TokenType.MAKE, TokenType.SET,
+    TokenType.SHOW, TokenType.HIDE,
 }
 
 
@@ -990,6 +1117,10 @@ class Parser:
             return self._parse_make()
         if tok.type == TokenType.SET:
             return self._parse_set()
+        if tok.type == TokenType.SHOW:
+            return self._parse_show()
+        if tok.type == TokenType.HIDE:
+            return self._parse_hide()
 
         # Bare expression statement (e.g. a function call).
         expr = self._parse_expression()
@@ -1001,12 +1132,64 @@ class Parser:
         let_tok = self._advance()  # LET
         name_tok = self._expect(TokenType.IDENT, "After 'let' I expected a name for the variable")
         self._expect(TokenType.BE, "After the variable name I expected 'be'")
+
+        # `let win be window`
+        if self._check(TokenType.WINDOW):
+            self._advance()
+            return LetStatement(
+                name=name_tok.value,
+                value=WindowLiteral(location=let_tok.location),
+                location=let_tok.location,
+            )
+
+        # `let btn be button "Click Me" on win`
+        # `let lbl be label "Hello" on win`
+        # `let name be text input "Your name" on win`
+        if self._check(TokenType.BUTTON):
+            return self._parse_widget_create(let_tok, name_tok, "button")
+        if self._check(TokenType.LABEL):
+            return self._parse_widget_create(let_tok, name_tok, "label")
+        if self._check(TokenType.TEXT_INPUT):
+            return self._parse_widget_create(let_tok, name_tok, "text input")
+
         value = self._parse_expression()
         if value is None:
             raise self._error("After 'be' I expected a value for the variable")
         return LetStatement(
             name=name_tok.value,
             value=value,
+            location=let_tok.location,
+        )
+
+    def _parse_widget_create(self, let_tok, name_tok, widget_type) -> LetStatement:
+        """`let btn be button "Click Me" on win`"""
+        self._advance()  # consume widget type token
+        # Parse optional initial text argument
+        args = []
+        if self._peek().type in (TokenType.STRING, TokenType.NUMBER,
+                                  TokenType.IDENT, TokenType.LPAREN):
+            # Don't consume 'on' as an argument
+            if not (self._peek().type == TokenType.IDENT and
+                    str(self._peek().value).lower() == "on"):
+                arg = self._parse_expression()
+                if arg is not None:
+                    args.append(arg)
+        # Expect `on <window>`
+        on_tok = self._expect(TokenType.IDENT, f"After '{widget_type}' I expected 'on' and a window name")
+        if str(on_tok.value).lower() != "on":
+            raise self._error(f"After the widget text I expected 'on'")
+        parent = self._parse_expression()
+        if parent is None:
+            raise self._error(f"After 'on' I expected the window name")
+        return LetStatement(
+            name=name_tok.value,
+            value=WidgetCreate(
+                var_name=name_tok.value,
+                widget_type=widget_type,
+                args=args,
+                parent=parent,
+                location=let_tok.location,
+            ),
             location=let_tok.location,
         )
 
@@ -1278,6 +1461,12 @@ class Parser:
             if operand is None:
                 raise self._error("After 'size of' I expected a value")
             return SizeExpression(collection=operand, location=op_tok.location)
+        if self._check(TokenType.TEXT_OF):
+            op_tok = self._advance()
+            operand = self._parse_size_of_or_primary()  # right-associative
+            if operand is None:
+                raise self._error("After 'text of' I expected a widget name")
+            return TextOf(widget=operand, location=op_tok.location)
         return self._parse_primary()
 
     def _parse_primary(self) -> Optional[object]:
@@ -1428,16 +1617,35 @@ class Parser:
         )
 
     def _parse_make(self) -> Statement:
-        """`make ada <action>` — many forms, see docs/turtle.md."""
+        """`make ada <action>` — many forms, see docs/turtle.md.
+        Also handles GUI: `make win place btn at row 0 and column 0`
+        and `make win do on_click when btn clicked`.
+        """
         make_tok = self._advance()  # MAKE
-        name = self._expect_ident("After 'make' I expected a turtle's name")
+        name = self._expect_ident("After 'make' I expected a name")
+
+        # `make win do on_click when btn clicked`
+        if self._check(TokenType.DO):
+            return self._parse_handle_event(make_tok, name)
+
+        # `make win place btn at row 0 and column 0`
+        if self._check(TokenType.PLACE):
+            return self._parse_place_widget(make_tok, name)
 
         # `make ada goto 50 right and 20 up`
         if self._check(TokenType.GOTO):
             return self._parse_make_goto_relative(make_tok, name)
 
-        # Everything else starts with an IDENT. Look at it to dispatch.
+        # Everything else starts with an IDENT, HIDE, or SHOW.
         nxt = self._peek()
+        # Handle `make ada hide` / `make ada show` when hide/show are keywords
+        if nxt.type in (TokenType.HIDE, TokenType.SHOW):
+            word = nxt.type.name.lower()
+            self._advance()
+            return MakeStatement(
+                turtle_name=name, action=word, arg=None,
+                location=make_tok.location,
+            )
         if nxt.type != TokenType.IDENT:
             raise self._error(
                 f"After 'make {name}' I expected an action "
@@ -1545,6 +1753,45 @@ class Parser:
             f"go home, go to X and Y, draw circle, draw dot, speed, or goto."
         )
 
+    def _parse_place_widget(self, make_tok, window_name: str) -> PlaceWidget:
+        """`make win place btn at row 0 and column 0`"""
+        self._advance()  # consume PLACE
+        widget_name = self._expect_ident("After 'place' I expected a widget name")
+        widget = Identifier(name=widget_name, location=make_tok.location)
+        self._expect(TokenType.AT, "After the widget name I expected 'at'")
+        self._expect(TokenType.ROW, "After 'at' I expected 'row'")
+        row = self._parse_primary()
+        if row is None:
+            raise self._error("After 'row' I expected a number")
+        self._expect(TokenType.AND, "After the row I expected 'and'")
+        self._expect(TokenType.COLUMN, "After 'and' I expected 'column'")
+        col = self._parse_primary()
+        if col is None:
+            raise self._error("After 'column' I expected a number")
+        return PlaceWidget(
+            window=Identifier(name=window_name, location=make_tok.location),
+            widget=widget,
+            row=row,
+            column=col,
+            location=make_tok.location,
+        )
+
+    def _parse_handle_event(self, make_tok, window_name: str) -> HandleEvent:
+        """`make win do on_click when btn clicked`"""
+        self._advance()  # consume DO
+        handler_tok = self._expect(TokenType.IDENT, "After 'do' I expected a function name")
+        self._expect(TokenType.WHEN, "After the function name I expected 'when'")
+        widget_name = self._expect_ident("After 'when' I expected a widget name")
+        widget = Identifier(name=widget_name, location=make_tok.location)
+        self._expect(TokenType.CLICKED, "After the widget name I expected 'clicked'")
+        return HandleEvent(
+            window=Identifier(name=window_name, location=make_tok.location),
+            handler=handler_tok.value,
+            widget=widget,
+            event="clicked",
+            location=make_tok.location,
+        )
+
     def _parse_make_goto_relative(self, make_tok, name: str) -> GotoStatement:
         """`make ada goto 50 right and 20 up`"""
         self._advance()  # consume GOTO
@@ -1580,11 +1827,12 @@ class Parser:
             location=make_tok.location,
         )
 
-    def _parse_set(self) -> SetStatement:
-        """`set ada pen color to 'red'` / `set ada background to 'white'` / etc."""
+    def _parse_set(self) -> Statement:
+        """`set ada pen color to 'red'` / `set win title to "My App"` /
+        `set greet text to "Hello"` / `set btn color to "blue"`."""
         set_tok = self._advance()  # SET
-        name = self._expect_ident("After 'set' I expected a turtle's name")
-        # Look for `pen color`, `pen size`, or any other single-word property.
+        name = self._expect_ident("After 'set' I expected a name")
+        # Look for property name (multi-word supported for GUI).
         property_name = self._parse_set_property(name)
         self._expect(TokenType.TO, f"After the property name I expected 'to'")
         value = self._parse_expression()
@@ -1597,34 +1845,57 @@ class Parser:
             location=set_tok.location,
         )
 
-    def _parse_set_property(self, turtle_name: str) -> str:
-        """Read the property name after `set <turtle>`.
+    def _parse_set_property(self, obj_name: str) -> str:
+        """Read the property name after `set <obj>`.
 
-        Supports `pen color`, `pen size`, or any other single-word property
-        like `background`. The second word after `pen` may be a regular
-        identifier or the `size` keyword (used in `size of X`).
+        Supports `pen color`, `pen size` (turtles), or GUI properties like
+        `title`, `text`, `color`, `font size`.
         """
         first = self._peek()
         if first.type != TokenType.IDENT:
             raise self._error(
-                f"After 'set {turtle_name}' I expected a property name "
-                f"(like 'pen color', 'pen size', or 'background')"
+                f"After 'set {obj_name}' I expected a property name "
+                f"(like 'title', 'text', 'color', or 'font size')"
             )
         word = str(first.value).lower()
         if word == "pen":
             self._advance()
             second = self._peek()
-            # The second word may be an IDENT or a keyword (e.g. SIZE).
-            # Match on the textual value, not the token type.
             second_text = str(second.value).lower() if second.value is not None else ""
             if second_text not in ("color", "size"):
                 raise self._error(
-                    f"After 'set {turtle_name} pen' I expected 'color' or 'size'"
+                    f"After 'set {obj_name} pen' I expected 'color' or 'size'"
                 )
             self._advance()
             return f"pen {second_text}"
         self._advance()
+        # Check for multi-word properties: `font size`
+        if word == "font" and (self._check(TokenType.IDENT) or self._check(TokenType.SIZE)):
+            second = self._peek()
+            second_text = str(second.value).lower() if second.value is not None else ""
+            if second_text == "size":
+                self._advance()
+                return "font size"
         return word
+
+    # --- GUI statements ---
+
+    def _parse_show(self) -> ShowWindow:
+        """`show win`"""
+        show_tok = self._advance()  # SHOW
+        expr = self._parse_expression()
+        if expr is None:
+            raise self._error("After 'show' I expected a window name")
+        return ShowWindow(window=expr, location=show_tok.location)
+
+    def _parse_hide(self) -> HideWindow:
+        """`hide win`"""
+        hide_tok = self._advance()  # HIDE
+        expr = self._parse_expression()
+        if expr is None:
+            raise self._error("After 'hide' I expected a window name")
+        return HideWindow(window=expr, location=hide_tok.location)
+
 
 
 # --- src/environment.py ---
@@ -1637,7 +1908,8 @@ from __future__ import annotations
 from typing import Any, Optional, Callable, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    
+    from src.ast_nodes import FunctionDef
+
 
 class Environment:
     def __init__(self, parent: Optional["Environment"] = None):
@@ -1687,658 +1959,6 @@ class Environment:
     def child(self) -> "Environment":
         return Environment(parent=self)
 
-
-# --- src/interpreter.py ---
-"""Interpreter for the E language.
-
-Walks the AST produced by the parser and actually runs the program.
-"""
-
-from __future__ import annotations
-from typing import List, Optional, Callable, Any
-
-    Program, Statement, LetStatement, SayStatement, IfStatement,
-    WhileStatement, RepeatStatement, ForEachStatement, FunctionDef,
-    ReturnStatement, ExpressionStatement,
-    NumberLiteral, StringLiteral, BoolLiteral, NothingLiteral, Identifier,
-    ListLiteral, ConcatExpression, BinaryOp, UnaryOp, CallExpression,
-    IndexExpression, SizeExpression, WithAddedExpression,
-    TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
-)
-
-
-# Internal control-flow signals. These are caught by the interpreter
-# at function boundaries.
-class _ReturnSignal(Exception):
-    def __init__(self, value):
-        self.value = value
-
-
-class _BreakSignal(Exception):
-    pass
-
-
-class _ContinueSignal(Exception):
-    pass
-
-
-# Sentinel returned by TurtleLiteral evaluation. _exec_let looks for this
-# to know it should create a fresh turtle bound to the let-name.
-class _turtle_factory_marker:
-    """Singleton sentinel: tells `_exec_let` to create a new turtle."""
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __repr__(self):
-        return "<turtle-factory>"
-
-
-# Type name helpers for friendly error messages.
-def _typename(v: Any) -> str:
-    if isinstance(v, bool):
-        return "true/false"
-    if isinstance(v, (int, float)):
-        return "number"
-    if isinstance(v, str):
-        return "text"
-    if isinstance(v, list):
-        return "list"
-    if v is None:
-        return "nothing"
-    return type(v).__name__
-
-
-def _to_text(v: Any) -> str:
-    """Convert any E value to a readable text form (for `,` concat and `say`)."""
-    if v is None:
-        return "nothing"
-    if isinstance(v, bool):
-        return "true" if v else "false"
-    if isinstance(v, list):
-        return "[" + ", ".join(_to_text(x) for x in v) + "]"
-    return str(v)
-
-
-def _to_number(v: Any) -> Any:
-    """Convert to a number if possible; raise a friendly error otherwise."""
-    if isinstance(v, bool):
-        raise TypeError_(
-            f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number."
-        )
-    if isinstance(v, (int, float)):
-        return v
-    if isinstance(v, str):
-        try:
-            n = float(v)
-            if n.is_integer():
-                return int(n)
-            return n
-        except ValueError:
-            raise TypeError_(
-                f"I can't turn the text \"{v}\" into a number."
-            )
-    raise TypeError_(
-        f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number."
-    )
-
-
-def _to_bool(v: Any) -> bool:
-    """E's truthiness: false/nothing are false; everything else is true."""
-    if v is None or v is False:
-        return False
-    return True
-
-
-class Interpreter:
-    def __init__(self, name: str = "<source>", turtle_mode: str = "auto"):
-        self.name = name
-        self.global_env = Environment()
-        self.output_buffer: List[str] = []
-        self.turtles = TurtleManager(requested_mode=turtle_mode)
-        self._install_builtins()
-
-    # ---------- public ----------
-
-    def run(self, program: Program) -> None:
-        """Execute a parsed program."""
-        self._exec_stmts(program.statements, self.global_env)
-
-    def run_string(self, source: str) -> None:
-        """Lex, parse, and run a source string (used by the REPL)."""
-                        toks = Lexer(source, "<repl>").tokenize()
-        prog = Parser(toks, "<repl>").parse()
-        self.run(prog)
-
-    # ---------- built-ins ----------
-
-    def _install_builtins(self) -> None:
-        """Register built-in functions in the global environment.
-
-        Built-ins are plain Python functions that take pre-evaluated args.
-        The interpreter validates argument counts at the call site.
-        """
-        self._builtins: dict = {
-            "ask": self._builtin_ask,
-            "number": self._builtin_number,
-            "text": self._builtin_text,
-            "random": self._builtin_random,
-            "uppercase": self._builtin_uppercase,
-            "lowercase": self._builtin_lowercase,
-        }
-        for name, fn in self._builtins.items():
-            self.global_env.define_function(name, fn)  # type: ignore[arg-type]
-
-    def _builtin_ask(self, args, loc):
-        if len(args) != 1:
-            raise TypeError_(
-                f"`ask` takes exactly 1 argument (a prompt), but I got {len(args)}.",
-                loc,
-            )
-        prompt = _to_text(args[0])
-        try:
-            return input(prompt)
-        except EOFError:
-            return ""
-
-    def _builtin_number(self, args, loc):
-        if len(args) != 1:
-            raise TypeError_(
-                f"`number` takes exactly 1 argument, but I got {len(args)}.",
-                loc,
-            )
-        return _to_number(args[0])
-
-    def _builtin_text(self, args, loc):
-        if len(args) != 1:
-            raise TypeError_(
-                f"`text` takes exactly 1 argument, but I got {len(args)}.",
-                loc,
-            )
-        return _to_text(args[0])
-
-    def _builtin_random(self, args, loc):
-        if len(args) != 2:
-            raise TypeError_(
-                f"`random` takes 2 arguments (low, high), but I got {len(args)}.",
-                loc,
-            )
-        lo = _to_number(args[0])
-        hi = _to_number(args[1])
-        if lo > hi:
-            lo, hi = hi, lo
-        import random as _r
-        if isinstance(lo, int) and isinstance(hi, int):
-            return _r.randint(int(lo), int(hi))
-        return _r.uniform(lo, hi)
-
-    def _builtin_uppercase(self, args, loc):
-        if len(args) != 1:
-            raise TypeError_(
-                f"`uppercase` takes exactly 1 argument, but I got {len(args)}.",
-                loc,
-            )
-        if not isinstance(args[0], str):
-            raise TypeError_(
-                f"`uppercase` needs text, but I got {_typename(args[0])}.",
-                loc,
-            )
-        return args[0].upper()
-
-    def _builtin_lowercase(self, args, loc):
-        if len(args) != 1:
-            raise TypeError_(
-                f"`lowercase` takes exactly 1 argument, but I got {len(args)}.",
-                loc,
-            )
-        if not isinstance(args[0], str):
-            raise TypeError_(
-                f"`lowercase` needs text, but I got {_typename(args[0])}.",
-                loc,
-            )
-        return args[0].lower()
-
-    # ---------- statements ----------
-
-    def _exec_stmts(self, stmts: List[Statement], env: Environment) -> None:
-        for s in stmts:
-            self._exec(s, env)
-
-    def _exec(self, stmt: Statement, env: Environment) -> None:
-        method = self._DISPATCH.get(type(stmt))
-        if method is None:
-            raise RuntimeError_(
-                f"I don't know how to run a {type(stmt).__name__}.",
-                getattr(stmt, "location", None),
-            )
-        method(self, stmt, env)
-
-    def _exec_let(self, stmt: LetStatement, env: Environment) -> None:
-        # `let ada be turtle` — create a new turtle and bind it to the name.
-        if isinstance(stmt.value, TurtleLiteral):
-            t = self.turtles.create(stmt.name)
-            env.define(stmt.name, t)
-            return
-        value = self._eval(stmt.value, env)
-        env.define(stmt.name, value)
-
-    def _exec_say(self, stmt: SayStatement, env: Environment) -> None:
-        # Each `parts` element is a full expression (which may contain a
-        # ConcatExpression inside). We render each one as text.
-        for part in stmt.parts:
-            value = self._eval(part, env)
-            text = _to_text(value)
-            self.output_buffer.append(text)
-            print(text)
-
-    def _exec_if(self, stmt: IfStatement, env: Environment) -> None:
-        if _to_bool(self._eval(stmt.condition, env)):
-            self._exec_stmts(stmt.then_branch, env)
-        elif stmt.else_branch is not None:
-            self._exec_stmts(stmt.else_branch, env)
-
-    def _exec_while(self, stmt: WhileStatement, env: Environment) -> None:
-        while _to_bool(self._eval(stmt.condition, env)):
-            try:
-                self._exec_stmts(stmt.body, env)
-            except _ContinueSignal:
-                continue
-            except _BreakSignal:
-                break
-
-    def _exec_repeat(self, stmt: RepeatStatement, env: Environment) -> None:
-        count = _to_number(self._eval(stmt.count, env))
-        count = int(count)
-        if count < 0:
-            count = 0
-        for _ in range(count):
-            try:
-                self._exec_stmts(stmt.body, env)
-            except _ContinueSignal:
-                continue
-            except _BreakSignal:
-                break
-
-    def _exec_for_each(self, stmt: ForEachStatement, env: Environment) -> None:
-        iterable = self._eval(stmt.iterable, env)
-        if not isinstance(iterable, list):
-            raise TypeError_(
-                f"I can only loop over a list, but I got {_typename(iterable)} "
-                f"({_to_text(iterable)}).",
-                stmt.iterable.location,
-            )
-        for item in iterable:
-            loop_env = env.child()
-            loop_env.define(stmt.var_name, item)
-            try:
-                self._exec_stmts(stmt.body, loop_env)
-            except _ContinueSignal:
-                continue
-            except _BreakSignal:
-                break
-
-    def _exec_function_def(self, stmt: FunctionDef, env: Environment) -> None:
-        env.define_function(stmt.name, stmt)
-
-    def _exec_return(self, stmt: ReturnStatement, env: Environment) -> None:
-        value = self._eval(stmt.value, env) if stmt.value is not None else None
-        raise _ReturnSignal(value)
-
-    def _exec_expr_stmt(self, stmt: ExpressionStatement, env: Environment) -> None:
-        # A bare expression as a statement — useful for calling functions
-        # whose return value we ignore.
-        self._eval(stmt.expression, env)
-
-    # ----- turtle statements -----
-
-    def _exec_move(self, stmt: MoveStatement, env: Environment) -> None:
-        t = self.turtles.get(stmt.turtle_name)
-        amount = _to_number(self._eval(stmt.amount, env))
-        if stmt.direction == "forward":
-            t.forward(amount)
-        elif stmt.direction == "backward":
-            t.backward(amount)
-        elif stmt.direction == "left":
-            t.left(amount)
-        elif stmt.direction == "right":
-            t.right(amount)
-        else:
-            raise RuntimeError_(
-                f"I don't know how to move '{stmt.direction}'.",
-                stmt.location,
-            )
-
-    def _exec_make(self, stmt: MakeStatement, env: Environment) -> None:
-        t = self.turtles.get(stmt.turtle_name)
-        action = stmt.action
-        if action == "hide":
-            t.hide()
-        elif action == "show":
-            t.show()
-        elif action == "pen_up":
-            t.raise_pen()
-        elif action == "pen_down":
-            t.lower_pen()
-        elif action == "erase_all":
-            t.clear()
-        elif action == "restart":
-            t.reset()
-        elif action == "home":
-            t.home()
-        elif action == "draw_circle":
-            r = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 0
-            t.circle(r)
-        elif action == "draw_dot":
-            s = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 0
-            t.dot(s)
-        elif action == "speed":
-            s = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 3
-            t.set_speed(int(s))
-        elif action == "go_to":
-            # arg is a ListLiteral of [x, y]
-            if not isinstance(stmt.arg, ListLiteral) or len(stmt.arg.elements) != 2:
-                raise RuntimeError_(
-                    f"'go to' needs two numbers, but I got something else.",
-                    stmt.location,
-                )
-            x = _to_number(self._eval(stmt.arg.elements[0], env))
-            y = _to_number(self._eval(stmt.arg.elements[1], env))
-            t.goto_absolute(x, y)
-        else:
-            raise RuntimeError_(
-                f"I don't know the turtle action '{action}'.",
-                stmt.location,
-            )
-
-    def _exec_goto(self, stmt: GotoStatement, env: Environment) -> None:
-        t = self.turtles.get(stmt.turtle_name)
-        x_amount = _to_number(self._eval(stmt.x_amount, env))
-        y_amount = _to_number(self._eval(stmt.y_amount, env))
-        t.goto_relative(x_amount, stmt.x_dir, y_amount, stmt.y_dir)
-
-    def _exec_set(self, stmt: SetStatement, env: Environment) -> None:
-        t = self.turtles.get(stmt.turtle_name)
-        prop = stmt.property
-        value = self._eval(stmt.value, env)
-        if prop == "pen color":
-            t.set_pen_color(_to_text(value))
-        elif prop == "pen size":
-            t.set_pen_size(int(_to_number(value)))
-        elif prop == "background":
-            t.set_background(_to_text(value))
-        else:
-            raise RuntimeError_(
-                f"I don't know how to set '{prop}' on a turtle.",
-                stmt.location,
-            )
-
-    _DISPATCH = {
-        LetStatement: _exec_let,
-        SayStatement: _exec_say,
-        IfStatement: _exec_if,
-        WhileStatement: _exec_while,
-        RepeatStatement: _exec_repeat,
-        ForEachStatement: _exec_for_each,
-        FunctionDef: _exec_function_def,
-        ReturnStatement: _exec_return,
-        ExpressionStatement: _exec_expr_stmt,
-        MoveStatement: _exec_move,
-        MakeStatement: _exec_make,
-        GotoStatement: _exec_goto,
-        SetStatement: _exec_set,
-    }
-
-    # ---------- expressions ----------
-
-    def _eval(self, expr, env: Environment) -> Any:
-        if expr is None:
-            return None
-        method = self._EVAL_DISPATCH.get(type(expr))
-        if method is None:
-            raise RuntimeError_(
-                f"I don't know how to evaluate a {type(expr).__name__}.",
-                getattr(expr, "location", None),
-            )
-        return method(self, expr, env)
-
-    def _eval_number(self, e: NumberLiteral, env):
-        return e.value
-
-    def _eval_string(self, e: StringLiteral, env):
-        return e.value
-
-    def _eval_bool(self, e: BoolLiteral, env):
-        return e.value
-
-    def _eval_nothing(self, e: NothingLiteral, env):
-        return None
-
-    def _eval_ident(self, e: Identifier, env):
-        name = e.name
-        try:
-            return env.get(name)
-        except KeyError:
-            raise NameError_(
-                f"I don't know what '{name}' means. "
-                f"Did you forget to define it with `let {name} be ...`?",
-                e.location,
-            )
-
-    def _eval_list(self, e: ListLiteral, env):
-        return [self._eval(x, env) for x in e.elements]
-
-    def _eval_concat(self, e: ConcatExpression, env):
-        # `,` is the string-concat operator: convert each part to text and join.
-        return "".join(_to_text(self._eval(p, env)) for p in e.parts)
-
-    def _eval_binary(self, e: BinaryOp, env):
-        op = e.op
-        # Short-circuit logic
-        if op == "and":
-            left = self._eval(e.left, env)
-            if not _to_bool(left):
-                return left
-            return self._eval(e.right, env)
-        if op == "or":
-            left = self._eval(e.left, env)
-            if _to_bool(left):
-                return left
-            return self._eval(e.right, env)
-
-        left = self._eval(e.left, env)
-        right = self._eval(e.right, env)
-
-        if op == "plus":
-            ln, rn = _to_number(left), _to_number(right)
-            return ln + rn
-        if op == "minus":
-            ln, rn = _to_number(left), _to_number(right)
-            return ln - rn
-        if op == "times":
-            ln, rn = _to_number(left), _to_number(right)
-            return ln * rn
-        if op == "divided by":
-            rn = _to_number(right)
-            if rn == 0:
-                raise RuntimeError_(
-                    "I can't divide by zero. Math says no!",
-                    e.right.location,
-                )
-            result = _to_number(left) / rn
-            # If both operands were ints and the result is whole, return an int.
-            if isinstance(left, int) and isinstance(right, int) and isinstance(result, float) and result.is_integer():
-                return int(result)
-            return result
-        if op == "mod":
-            ln, rn = _to_number(left), _to_number(right)
-            if rn == 0:
-                raise RuntimeError_(
-                    "I can't mod by zero.",
-                    e.right.location,
-                )
-            return ln % rn
-
-        if op == "is":
-            return left == right
-        if op == "is not equal to":
-            return left != right
-        if op == "is greater than":
-            ln, rn = _to_number(left), _to_number(right)
-            return ln > rn
-        if op == "is less than":
-            ln, rn = _to_number(left), _to_number(right)
-            return ln < rn
-        if op == "is greater than or equal to":
-            ln, rn = _to_number(left), _to_number(right)
-            return ln >= rn
-        if op == "is less than or equal to":
-            ln, rn = _to_number(left), _to_number(right)
-            return ln <= rn
-
-        raise RuntimeError_(f"I don't know the operator '{op}'.", e.location)
-
-    def _eval_unary(self, e: UnaryOp, env):
-        if e.op == "not":
-            return not _to_bool(self._eval(e.operand, env))
-        if e.op == "minus":
-            return -_to_number(self._eval(e.operand, env))
-        raise RuntimeError_(f"I don't know the operator '{e.op}'.", e.location)
-
-    def _eval_index(self, e: IndexExpression, env):
-        coll = self._eval(e.collection, env)
-        idx = self._eval(e.index, env)
-        idx_n = int(_to_number(idx))
-        if not isinstance(coll, list):
-            raise TypeError_(
-                f"I can't use 'at' on {_typename(coll)} ({_to_text(coll)}). "
-                f"`at` only works on lists.",
-                e.location,
-            )
-        if idx_n < 0:
-            idx_n += len(coll)
-        if idx_n < 0 or idx_n >= len(coll):
-            raise RuntimeError_(
-                f"I tried to get item {idx_n} from a list of size {len(coll)}, "
-                f"but that item doesn't exist (lists start at 0 and go to {len(coll) - 1}).",
-                e.index.location,
-            )
-        return coll[idx_n]
-
-    def _eval_size(self, e: SizeExpression, env):
-        coll = self._eval(e.collection, env)
-        if isinstance(coll, list):
-            return len(coll)
-        if isinstance(coll, str):
-            return len(coll)
-        raise TypeError_(
-            f"I can't get the size of {_typename(coll)} ({_to_text(coll)}). "
-            f"Use `size of` on a list or some text.",
-            e.location,
-        )
-
-    def _eval_with_added(self, e: WithAddedExpression, env):
-        coll = self._eval(e.collection, env)
-        if not isinstance(coll, list):
-            raise TypeError_(
-                f"I can only add to a list with 'with ... added', "
-                f"but I got {_typename(coll)} ({_to_text(coll)}).",
-                e.location,
-            )
-        value = self._eval(e.value, env)
-        return coll + [value]
-
-    def _eval_turtle_literal(self, e: TurtleLiteral, env):
-        """`turtle` — a marker for "create a new turtle". We need a name to
-        bind it to, but the parser already consumed the name via LetStatement.
-        However, in the existing LetStatement executor, we just call
-        `_eval(stmt.value, env)` and assign whatever it returns. So we
-        return a sentinel that `_exec_let` recognizes.
-
-        Actually, simpler: return a special wrapper and let the let-statement
-        executor do the create-and-bind itself. But that requires changing
-        the let executor. Cleaner: have `let ada be turtle` go through a
-        special path.
-
-        Decision: We return a `_TurtleFactory` sentinel here, and the
-        let-statement executor checks for it and creates the turtle."""
-                # Return a placeholder; _exec_let will detect TurtleLiteral and
-        # create a new turtle with the bound name.
-        return _turtle_factory_marker()
-
-    def _eval_call(self, e: CallExpression, env):
-        name = e.callee
-        # Turtle property access: `ada heading` / `ada x` / `ada y`.
-        # The parser can't tell at parse time whether `ada` is a turtle
-        # or a function, so we dispatch at runtime: if the first argument
-        # is an Identifier and the callee is a Turtle, treat as property
-        # read.
-        if (len(e.arguments) == 1
-                and isinstance(e.arguments[0], Identifier)
-                and name in self.turtles.turtles):
-            t = self.turtles.get(name)
-            prop = e.arguments[0].name
-            if prop == "heading":
-                return t.heading
-            if prop == "x":
-                return t.x
-            if prop == "y":
-                return t.y
-            raise RuntimeError_(
-                f"I don't know what property '{prop}' means on a turtle. "
-                f"Try 'heading', 'x', or 'y'.",
-                e.location,
-            )
-
-        args = [self._eval(a, env) for a in e.arguments]
-
-        # Built-in first
-        if name in self._builtins:
-            return self._builtins[name](args, e.location)
-
-        # User-defined function
-        func = env.get_function(name)
-        if func is None:
-            raise NameError_(
-                f"I don't know a function called '{name}'.",
-                e.location,
-            )
-
-        if len(func.params) != len(args):
-            raise TypeError_(
-                f"The function '{name}' expects {len(func.params)} argument"
-                f"{'s' if len(func.params) != 1 else ''} "
-                f"but I got {len(args)}.",
-                e.location,
-            )
-
-        call_env = self.global_env.child() if func.name in self._builtins else env.child()
-        for pname, pval in zip(func.params, args):
-            call_env.define(pname, pval)
-        try:
-            self._exec_stmts(func.body, call_env)
-        except _ReturnSignal as ret:
-            return ret.value
-        return None
-
-    _EVAL_DISPATCH = {
-        NumberLiteral: _eval_number,
-        StringLiteral: _eval_string,
-        BoolLiteral: _eval_bool,
-        NothingLiteral: _eval_nothing,
-        Identifier: _eval_ident,
-        ListLiteral: _eval_list,
-        ConcatExpression: _eval_concat,
-        BinaryOp: _eval_binary,
-        UnaryOp: _eval_unary,
-        CallExpression: _eval_call,
-        IndexExpression: _eval_index,
-        SizeExpression: _eval_size,
-        WithAddedExpression: _eval_with_added,
-        TurtleLiteral: _eval_turtle_literal,
-    }
 
 
 # --- src/turtle_runtime.py ---
@@ -2652,4 +2272,1060 @@ class TurtleManager:
                 # We're probably not in the main thread; just let the
                 # window be. Python's atexit will clean up.
                 pass
+
+
+
+# --- src/gui_runtime.py ---
+"""GUI window runtime for the E language.
+
+Follows the same pattern as turtle_runtime.py:
+- WindowManager owns all GUI windows/widgets for one E program run.
+- Text-mode fallback: every GUI command is logged to a list so tests
+  can verify them without needing a display.
+- Window mode: creates real tkinter widgets.
+
+Usage from the interpreter:
+    wm = GuiManager(requested_mode="auto")
+    wm.create_window("win")
+    wm.create_widget("button", "btn", "win", "Click Me")
+    wm.set_property("win", "title", "My App")
+    wm.place_widget("win", "btn", 0, 0)
+    wm.handle_event("win", "on_click", "btn", "clicked")
+    wm.show_window("win")
+"""
+
+from __future__ import annotations
+from typing import Dict, List, Optional, Any
+
+
+class _Widget:
+    """Internal representation of a GUI widget."""
+
+    def __init__(self, widget_type: str, name: str, parent: str, text: str = ""):
+        self.widget_type = widget_type
+        self.name = name
+        self.parent = parent
+        self.text = text
+        self.properties: Dict[str, Any] = {}
+        self._tk_widget = None  # real tkinter widget in window mode
+
+    def __repr__(self) -> str:
+        return f"<{self.widget_type} '{self.name}' text='{self.text}'>"
+
+
+class _Window:
+    """Internal representation of a GUI window."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self.properties: Dict[str, Any] = {"title": "E Program", "width": 400, "height": 300}
+        self.widgets: Dict[str, _Widget] = {}
+        self._tk_root = None  # real tkinter root in window mode
+        self._tk_frames: Dict[str, Any] = {}  # grid frame storage
+
+    def __repr__(self) -> str:
+        return f"<window '{self.name}' widgets={len(self.widgets)}>"
+
+
+class GuiManager:
+    """Manages GUI windows and widgets for an E program run.
+
+    Follows the same dual-mode pattern as TurtleManager:
+    - 'window' mode: creates real tkinter widgets
+    - 'text' mode: logs commands for testing
+    - 'auto' mode: tries window, falls back to text
+    """
+
+    def __init__(self, requested_mode: str = "auto"):
+        self._mode = self._resolve_mode(requested_mode)
+        self._windows: Dict[str, _Window] = {}
+        self._widgets: Dict[str, _Widget] = {}  # flat lookup by name
+        self._log: List[str] = []
+        self._event_handlers: Dict[str, str] = {}  # "win.btn.clicked" -> handler_name
+        self._tk_initialized = False
+
+    # --- mode resolution ---
+
+    def _resolve_mode(self, requested: str) -> str:
+        if requested == "window":
+            try:
+                import tkinter
+                return "window"
+            except ImportError:
+                return "text"
+        if requested == "text":
+            return "text"
+        # auto: try window, fall back to text
+        try:
+            import tkinter
+            return "window"
+        except ImportError:
+            return "text"
+
+    @property
+    def mode(self) -> str:
+        return self._mode
+
+    # --- window operations ---
+
+    def create_window(self, name: str) -> str:
+        """Create a new window. Returns the window name."""
+        if name in self._windows:
+            self._log.append(f"restart_window {name}")
+            return name
+        self._windows[name] = _Window(name)
+        self._log.append(f"create_window {name}")
+
+        if self._mode == "window" and not self._tk_initialized:
+            try:
+                import tkinter as tk
+                self._tk_initialized = True
+            except ImportError:
+                pass
+
+        return name
+
+    def set_property(self, obj_name: str, prop: str, value: Any) -> None:
+        """Set a property on a window or widget."""
+        # Check windows first
+        if obj_name in self._windows:
+            win = self._windows[obj_name]
+            win.properties[prop] = value
+            self._log.append(f"set_property {obj_name} {prop} {value}")
+
+            # Apply to real tkinter widget if in window mode
+            if self._mode == "window" and win._tk_root:
+                if prop == "title":
+                    win._tk_root.title(str(value))
+                elif prop == "width":
+                    win._tk_root.geometry(f"{int(value)}x{win.properties.get('height', 300)}")
+                elif prop == "height":
+                    win._tk_root.geometry(f"{win.properties.get('width', 400)}x{int(value)}")
+            return
+
+        # Check widgets
+        if obj_name in self._widgets:
+            w = self._widgets[obj_name]
+            w.properties[prop] = value
+            # Update text in both modes
+            if prop == "text":
+                w.text = str(value)
+            self._log.append(f"set_property {obj_name} {prop} {value}")
+
+            # Apply to real tkinter widget if in window mode
+            if self._mode == "window" and w._tk_widget:
+                if prop == "text":
+                    try:
+                        w._tk_widget.config(text=str(value))
+                    except Exception:
+                        pass
+                elif prop == "color":
+                    try:
+                        w._tk_widget.config(fg=str(value))
+                    except Exception:
+                        pass
+                elif prop == "bg":
+                    try:
+                        w._tk_widget.config(bg=str(value))
+                    except Exception:
+                        pass
+                elif prop == "font size":
+                    try:
+                        w._tk_widget.config(font=("", int(value)))
+                    except Exception:
+                        pass
+            return
+
+        raise ValueError(f"I don't know an object called '{obj_name}'")
+
+    def get_property(self, obj_name: str, prop: str) -> Any:
+        """Read a property from a window or widget."""
+        if obj_name in self._windows:
+            return self._windows[obj_name].properties.get(prop)
+        if obj_name in self._widgets:
+            w = self._widgets[obj_name]
+            if prop == "text":
+                return w.text
+            return w.properties.get(prop)
+        raise ValueError(f"I don't know an object called '{obj_name}'")
+
+    # --- widget operations ---
+
+    def create_widget(self, widget_type: str, name: str, parent: str, text: str = "") -> str:
+        """Create a new widget on a window. Returns the widget name."""
+        if parent not in self._windows:
+            raise ValueError(
+                f"I can't create a '{widget_type}' on '{parent}' — "
+                f"'{parent}' is not a window."
+            )
+        self._widgets[name] = _Widget(widget_type, name, parent, text)
+        self._log.append(f"create_widget {widget_type} {name} on {parent} text={text}")
+
+        # Create real tkinter widget if in window mode
+        if self._mode == "window" and parent in self._windows:
+            win = self._windows[parent]
+            if win._tk_root:
+                try:
+                    import tkinter as tk
+                    if widget_type == "label":
+                        w = tk.Label(win._tk_root, text=text)
+                    elif widget_type == "button":
+                        w = tk.Button(win._tk_root, text=text)
+                    elif widget_type == "text input":
+                        w = tk.Entry(win._tk_root)
+                        w.insert(0, text)
+                    else:
+                        w = tk.Label(win._tk_root, text=text)
+                    self._widgets[name]._tk_widget = w
+                except Exception:
+                    pass
+
+        self._log.append(f"create_widget {widget_type} {name} on {parent} text='{text}'")
+        return name
+
+    def place_widget(self, window_name: str, widget_name: str, row: int, column: int) -> None:
+        """Place a widget in a grid layout."""
+        self._log.append(f"place_widget {widget_name} at row {row} column {column}")
+
+        if self._mode == "window":
+            win = self._windows.get(window_name)
+            if win and win._tk_root:
+                w = self._widgets.get(widget_name)
+                if w and w._tk_widget:
+                    try:
+                        w._tk_widget.grid(row=row, column=column, padx=5, pady=5, sticky="ew")
+                    except Exception:
+                        pass
+
+    def handle_event(self, window_name: str, handler_name: str, widget_name: str, event: str) -> None:
+        """Bind an event handler to a widget."""
+        key = f"{window_name}.{widget_name}.{event}"
+        self._event_handlers[key] = handler_name
+        self._log.append(f"handle_event {handler_name} when {widget_name} {event}")
+
+    def show_window(self, window_name: str) -> None:
+        """Show the window and start the event loop (window mode) or log it (text mode)."""
+        self._log.append(f"show_window {window_name}")
+
+        if self._mode == "window":
+            win = self._windows.get(window_name)
+            if win and win._tk_root:
+                try:
+                    win._tk_root.mainloop()
+                except Exception:
+                    pass
+
+    def hide_window(self, window_name: str) -> None:
+        """Hide the window."""
+        self._log.append(f"hide_window {window_name}")
+
+        if self._mode == "window":
+            win = self._windows.get(window_name)
+            if win and win._tk_root:
+                try:
+                    win._tk_root.withdraw()
+                except Exception:
+                    pass
+
+    def get_text_of(self, widget_name: str) -> str:
+        """Read the current text value of a widget."""
+        if widget_name in self._widgets:
+            w = self._widgets[widget_name]
+            # In window mode, read from the real tkinter widget
+            if self._mode == "window" and w._tk_widget:
+                try:
+                    return w._tk_widget.get()
+                except Exception:
+                    try:
+                        return w._tk_widget.cget("text")
+                    except Exception:
+                        pass
+            return w.text
+        self._log.append(f"get_text_of {widget_name}")
+        return ""
+
+    # --- logging (for text mode tests) ---
+
+    def get_log(self) -> List[str]:
+        """Return the command log for text-mode testing."""
+        return list(self._log)
+
+
+
+# --- src/interpreter.py ---
+"""Interpreter for the E language.
+
+Walks the AST produced by the parser and actually runs the program.
+"""
+
+from __future__ import annotations
+from typing import List, Optional, Callable, Any
+
+from src.ast_nodes import (
+    Program, Statement, LetStatement, SayStatement, IfStatement,
+    WhileStatement, RepeatStatement, ForEachStatement, FunctionDef,
+    ReturnStatement, ExpressionStatement,
+    NumberLiteral, StringLiteral, BoolLiteral, NothingLiteral, Identifier,
+    ListLiteral, ConcatExpression, BinaryOp, UnaryOp, CallExpression,
+    IndexExpression, SizeExpression, WithAddedExpression,
+    TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
+    WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
+    ShowWindow, HideWindow, TextOf,
+)
+from src.environment import Environment
+from src.errors import RuntimeError_, NameError_, TypeError_, SourceLocation
+from src.turtle_runtime import TurtleManager
+from src.gui_runtime import GuiManager
+
+
+# Internal control-flow signals. These are caught by the interpreter
+# at function boundaries.
+class _ReturnSignal(Exception):
+    def __init__(self, value):
+        self.value = value
+
+
+class _BreakSignal(Exception):
+    pass
+
+
+class _ContinueSignal(Exception):
+    pass
+
+
+# Sentinel returned by TurtleLiteral evaluation. _exec_let looks for this
+# to know it should create a fresh turtle bound to the let-name.
+class _turtle_factory_marker:
+    """Singleton sentinel: tells `_exec_let` to create a new turtle."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self):
+        return "<turtle-factory>"
+
+
+# Sentinel returned by WindowLiteral evaluation. _exec_let looks for this
+# to know it should create a fresh window bound to the let-name.
+class _window_factory_marker:
+    """Singleton sentinel: tells `_exec_let` to create a new window."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self):
+        return "<window-factory>"
+
+
+# Type name helpers for friendly error messages.
+def _typename(v: Any) -> str:
+    if isinstance(v, bool):
+        return "true/false"
+    if isinstance(v, (int, float)):
+        return "number"
+    if isinstance(v, str):
+        return "text"
+    if isinstance(v, list):
+        return "list"
+    if v is None:
+        return "nothing"
+    return type(v).__name__
+
+
+def _to_text(v: Any) -> str:
+    """Convert any E value to a readable text form (for `,` concat and `say`)."""
+    if v is None:
+        return "nothing"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, list):
+        return "[" + ", ".join(_to_text(x) for x in v) + "]"
+    return str(v)
+
+
+def _to_number(v: Any) -> Any:
+    """Convert to a number if possible; raise a friendly error otherwise."""
+    if isinstance(v, bool):
+        raise TypeError_(
+            f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number."
+        )
+    if isinstance(v, (int, float)):
+        return v
+    if isinstance(v, str):
+        try:
+            n = float(v)
+            if n.is_integer():
+                return int(n)
+            return n
+        except ValueError:
+            raise TypeError_(
+                f"I can't turn the text \"{v}\" into a number."
+            )
+    raise TypeError_(
+        f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number."
+    )
+
+
+def _to_bool(v: Any) -> bool:
+    """E's truthiness: false/nothing are false; everything else is true."""
+    if v is None or v is False:
+        return False
+    return True
+
+
+class Interpreter:
+    def __init__(self, name: str = "<source>", turtle_mode: str = "auto"):
+        self.name = name
+        self.global_env = Environment()
+        self.output_buffer: List[str] = []
+        self.turtles = TurtleManager(requested_mode=turtle_mode)
+        self.gui = GuiManager(requested_mode=turtle_mode)
+        self._install_builtins()
+
+    # ---------- public ----------
+
+    def run(self, program: Program) -> None:
+        """Execute a parsed program."""
+        self._exec_stmts(program.statements, self.global_env)
+
+    def run_string(self, source: str) -> None:
+        """Lex, parse, and run a source string (used by the REPL)."""
+        from src.lexer import Lexer
+        from src.parser import Parser
+        toks = Lexer(source, "<repl>").tokenize()
+        prog = Parser(toks, "<repl>").parse()
+        self.run(prog)
+
+    # ---------- built-ins ----------
+
+    def _install_builtins(self) -> None:
+        """Register built-in functions in the global environment.
+
+        Built-ins are plain Python functions that take pre-evaluated args.
+        The interpreter validates argument counts at the call site.
+        """
+        self._builtins: dict = {
+            "ask": self._builtin_ask,
+            "number": self._builtin_number,
+            "text": self._builtin_text,
+            "random": self._builtin_random,
+            "uppercase": self._builtin_uppercase,
+            "lowercase": self._builtin_lowercase,
+        }
+        for name, fn in self._builtins.items():
+            self.global_env.define_function(name, fn)  # type: ignore[arg-type]
+
+    def _builtin_ask(self, args, loc):
+        if len(args) != 1:
+            raise TypeError_(
+                f"`ask` takes exactly 1 argument (a prompt), but I got {len(args)}.",
+                loc,
+            )
+        prompt = _to_text(args[0])
+        try:
+            return input(prompt)
+        except EOFError:
+            return ""
+
+    def _builtin_number(self, args, loc):
+        if len(args) != 1:
+            raise TypeError_(
+                f"`number` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        return _to_number(args[0])
+
+    def _builtin_text(self, args, loc):
+        if len(args) != 1:
+            raise TypeError_(
+                f"`text` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        return _to_text(args[0])
+
+    def _builtin_random(self, args, loc):
+        if len(args) != 2:
+            raise TypeError_(
+                f"`random` takes 2 arguments (low, high), but I got {len(args)}.",
+                loc,
+            )
+        lo = _to_number(args[0])
+        hi = _to_number(args[1])
+        if lo > hi:
+            lo, hi = hi, lo
+        import random as _r
+        if isinstance(lo, int) and isinstance(hi, int):
+            return _r.randint(int(lo), int(hi))
+        return _r.uniform(lo, hi)
+
+    def _builtin_uppercase(self, args, loc):
+        if len(args) != 1:
+            raise TypeError_(
+                f"`uppercase` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`uppercase` needs text, but I got {_typename(args[0])}.",
+                loc,
+            )
+        return args[0].upper()
+
+    def _builtin_lowercase(self, args, loc):
+        if len(args) != 1:
+            raise TypeError_(
+                f"`lowercase` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`lowercase` needs text, but I got {_typename(args[0])}.",
+                loc,
+            )
+        return args[0].lower()
+
+    # ---------- statements ----------
+
+    def _exec_stmts(self, stmts: List[Statement], env: Environment) -> None:
+        for s in stmts:
+            self._exec(s, env)
+
+    def _exec(self, stmt: Statement, env: Environment) -> None:
+        method = self._DISPATCH.get(type(stmt))
+        if method is None:
+            raise RuntimeError_(
+                f"I don't know how to run a {type(stmt).__name__}.",
+                getattr(stmt, "location", None),
+            )
+        method(self, stmt, env)
+
+    def _exec_let(self, stmt: LetStatement, env: Environment) -> None:
+        # `let ada be turtle` — create a new turtle and bind it to the name.
+        if isinstance(stmt.value, TurtleLiteral):
+            t = self.turtles.create(stmt.name)
+            env.define(stmt.name, t)
+            return
+        # `let win be window` — create a new window and bind it to the name.
+        if isinstance(stmt.value, WindowLiteral):
+            self.gui.create_window(stmt.name)
+            env.define(stmt.name, stmt.name)
+            return
+        # `let btn be button "Click Me" on win` — create a widget.
+        if isinstance(stmt.value, WidgetCreate):
+            self._exec_widget_create(stmt.value, env)
+            env.define(stmt.name, stmt.name)
+            return
+        value = self._eval(stmt.value, env)
+        env.define(stmt.name, value)
+
+    def _exec_say(self, stmt: SayStatement, env: Environment) -> None:
+        # Each `parts` element is a full expression (which may contain a
+        # ConcatExpression inside). We render each one as text.
+        for part in stmt.parts:
+            value = self._eval(part, env)
+            text = _to_text(value)
+            self.output_buffer.append(text)
+            print(text)
+
+    def _exec_if(self, stmt: IfStatement, env: Environment) -> None:
+        if _to_bool(self._eval(stmt.condition, env)):
+            self._exec_stmts(stmt.then_branch, env)
+        elif stmt.else_branch is not None:
+            self._exec_stmts(stmt.else_branch, env)
+
+    def _exec_while(self, stmt: WhileStatement, env: Environment) -> None:
+        while _to_bool(self._eval(stmt.condition, env)):
+            try:
+                self._exec_stmts(stmt.body, env)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
+
+    def _exec_repeat(self, stmt: RepeatStatement, env: Environment) -> None:
+        count = _to_number(self._eval(stmt.count, env))
+        count = int(count)
+        if count < 0:
+            count = 0
+        for _ in range(count):
+            try:
+                self._exec_stmts(stmt.body, env)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
+
+    def _exec_for_each(self, stmt: ForEachStatement, env: Environment) -> None:
+        iterable = self._eval(stmt.iterable, env)
+        if not isinstance(iterable, list):
+            raise TypeError_(
+                f"I can only loop over a list, but I got {_typename(iterable)} "
+                f"({_to_text(iterable)}).",
+                stmt.iterable.location,
+            )
+        for item in iterable:
+            loop_env = env.child()
+            loop_env.define(stmt.var_name, item)
+            try:
+                self._exec_stmts(stmt.body, loop_env)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
+
+    def _exec_function_def(self, stmt: FunctionDef, env: Environment) -> None:
+        env.define_function(stmt.name, stmt)
+
+    def _exec_return(self, stmt: ReturnStatement, env: Environment) -> None:
+        value = self._eval(stmt.value, env) if stmt.value is not None else None
+        raise _ReturnSignal(value)
+
+    def _exec_expr_stmt(self, stmt: ExpressionStatement, env: Environment) -> None:
+        # A bare expression as a statement — useful for calling functions
+        # whose return value we ignore.
+        self._eval(stmt.expression, env)
+
+    # ----- turtle statements -----
+
+    def _exec_move(self, stmt: MoveStatement, env: Environment) -> None:
+        t = self.turtles.get(stmt.turtle_name)
+        amount = _to_number(self._eval(stmt.amount, env))
+        if stmt.direction == "forward":
+            t.forward(amount)
+        elif stmt.direction == "backward":
+            t.backward(amount)
+        elif stmt.direction == "left":
+            t.left(amount)
+        elif stmt.direction == "right":
+            t.right(amount)
+        else:
+            raise RuntimeError_(
+                f"I don't know how to move '{stmt.direction}'.",
+                stmt.location,
+            )
+
+    def _exec_make(self, stmt: MakeStatement, env: Environment) -> None:
+        t = self.turtles.get(stmt.turtle_name)
+        action = stmt.action
+        if action == "hide":
+            t.hide()
+        elif action == "show":
+            t.show()
+        elif action == "pen_up":
+            t.raise_pen()
+        elif action == "pen_down":
+            t.lower_pen()
+        elif action == "erase_all":
+            t.clear()
+        elif action == "restart":
+            t.reset()
+        elif action == "home":
+            t.home()
+        elif action == "draw_circle":
+            r = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 0
+            t.circle(r)
+        elif action == "draw_dot":
+            s = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 0
+            t.dot(s)
+        elif action == "speed":
+            s = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 3
+            t.set_speed(int(s))
+        elif action == "go_to":
+            # arg is a ListLiteral of [x, y]
+            if not isinstance(stmt.arg, ListLiteral) or len(stmt.arg.elements) != 2:
+                raise RuntimeError_(
+                    f"'go to' needs two numbers, but I got something else.",
+                    stmt.location,
+                )
+            x = _to_number(self._eval(stmt.arg.elements[0], env))
+            y = _to_number(self._eval(stmt.arg.elements[1], env))
+            t.goto_absolute(x, y)
+        else:
+            raise RuntimeError_(
+                f"I don't know the turtle action '{action}'.",
+                stmt.location,
+            )
+
+    def _exec_goto(self, stmt: GotoStatement, env: Environment) -> None:
+        t = self.turtles.get(stmt.turtle_name)
+        x_amount = _to_number(self._eval(stmt.x_amount, env))
+        y_amount = _to_number(self._eval(stmt.y_amount, env))
+        t.goto_relative(x_amount, stmt.x_dir, y_amount, stmt.y_dir)
+
+    def _exec_set(self, stmt: SetStatement, env: Environment) -> None:
+        name = stmt.turtle_name
+        prop = stmt.property
+        value = self._eval(stmt.value, env)
+
+        # Check if this is a turtle (has a turtle with this name)
+        try:
+            t = self.turtles.get(name)
+        except RuntimeError:
+            t = None
+        if t is not None:
+            if prop == "pen color":
+                t.set_pen_color(_to_text(value))
+            elif prop == "pen size":
+                t.set_pen_size(int(_to_number(value)))
+            elif prop == "background":
+                t.set_background(_to_text(value))
+            else:
+                raise RuntimeError_(
+                    f"I don't know how to set '{prop}' on a turtle.",
+                    stmt.location,
+                )
+            return
+
+        # Check if this is a GUI widget or window
+        try:
+            self.gui.set_property(name, prop, value)
+            return
+        except ValueError:
+            pass
+
+        raise RuntimeError_(
+            f"I don't know how to set '{prop}' on '{name}'.",
+            stmt.location,
+        )
+
+    def _exec_widget_create(self, stmt: WidgetCreate, env: Environment) -> None:
+        """`let btn be button "Click Me" on win`"""
+        text = ""
+        if stmt.args:
+            text = _to_text(self._eval(stmt.args[0], env))
+        parent_name = self._eval(stmt.parent, env)
+        if isinstance(parent_name, str):
+            pass  # already a string name
+        else:
+            parent_name = stmt.parent.name if hasattr(stmt.parent, 'name') else str(parent_name)
+        try:
+            self.gui.create_widget(stmt.widget_type, stmt.var_name, parent_name, text)
+        except ValueError as e:
+            raise RuntimeError_(str(e), stmt.location)
+
+    def _exec_handle_event(self, stmt: HandleEvent, env: Environment) -> None:
+        """`make win do on_click when btn clicked`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        widget_name = self._eval(stmt.widget, env)
+        if not isinstance(widget_name, str):
+            widget_name = stmt.widget.name if hasattr(stmt.widget, 'name') else str(widget_name)
+        self.gui.handle_event(window_name, stmt.handler, widget_name, stmt.event)
+
+    def _exec_place_widget(self, stmt: PlaceWidget, env: Environment) -> None:
+        """`make win place btn at row 0 and column 0`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        widget_name = self._eval(stmt.widget, env)
+        if not isinstance(widget_name, str):
+            widget_name = stmt.widget.name if hasattr(stmt.widget, 'name') else str(widget_name)
+        row = int(_to_number(self._eval(stmt.row, env)))
+        col = int(_to_number(self._eval(stmt.column, env)))
+        self.gui.place_widget(window_name, widget_name, row, col)
+
+    def _exec_show_window(self, stmt: ShowWindow, env: Environment) -> None:
+        """`show win`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        self.gui.show_window(window_name)
+
+    def _exec_hide_window(self, stmt: HideWindow, env: Environment) -> None:
+        """`hide win`"""
+        window_name = self._eval(stmt.window, env)
+        if not isinstance(window_name, str):
+            window_name = stmt.window.name if hasattr(stmt.window, 'name') else str(window_name)
+        self.gui.hide_window(window_name)
+
+    _DISPATCH = {
+        LetStatement: _exec_let,
+        SayStatement: _exec_say,
+        IfStatement: _exec_if,
+        WhileStatement: _exec_while,
+        RepeatStatement: _exec_repeat,
+        ForEachStatement: _exec_for_each,
+        FunctionDef: _exec_function_def,
+        ReturnStatement: _exec_return,
+        ExpressionStatement: _exec_expr_stmt,
+        MoveStatement: _exec_move,
+        MakeStatement: _exec_make,
+        GotoStatement: _exec_goto,
+        SetStatement: _exec_set,
+        WidgetCreate: _exec_widget_create,
+        HandleEvent: _exec_handle_event,
+        PlaceWidget: _exec_place_widget,
+        ShowWindow: _exec_show_window,
+        HideWindow: _exec_hide_window,
+    }
+
+    # ---------- expressions ----------
+
+    def _eval(self, expr, env: Environment) -> Any:
+        if expr is None:
+            return None
+        method = self._EVAL_DISPATCH.get(type(expr))
+        if method is None:
+            raise RuntimeError_(
+                f"I don't know how to evaluate a {type(expr).__name__}.",
+                getattr(expr, "location", None),
+            )
+        return method(self, expr, env)
+
+    def _eval_number(self, e: NumberLiteral, env):
+        return e.value
+
+    def _eval_string(self, e: StringLiteral, env):
+        return e.value
+
+    def _eval_bool(self, e: BoolLiteral, env):
+        return e.value
+
+    def _eval_nothing(self, e: NothingLiteral, env):
+        return None
+
+    def _eval_ident(self, e: Identifier, env):
+        name = e.name
+        try:
+            return env.get(name)
+        except KeyError:
+            raise NameError_(
+                f"I don't know what '{name}' means. "
+                f"Did you forget to define it with `let {name} be ...`?",
+                e.location,
+            )
+
+    def _eval_list(self, e: ListLiteral, env):
+        return [self._eval(x, env) for x in e.elements]
+
+    def _eval_concat(self, e: ConcatExpression, env):
+        # `,` is the string-concat operator: convert each part to text and join.
+        return "".join(_to_text(self._eval(p, env)) for p in e.parts)
+
+    def _eval_binary(self, e: BinaryOp, env):
+        op = e.op
+        # Short-circuit logic
+        if op == "and":
+            left = self._eval(e.left, env)
+            if not _to_bool(left):
+                return left
+            return self._eval(e.right, env)
+        if op == "or":
+            left = self._eval(e.left, env)
+            if _to_bool(left):
+                return left
+            return self._eval(e.right, env)
+
+        left = self._eval(e.left, env)
+        right = self._eval(e.right, env)
+
+        if op == "plus":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln + rn
+        if op == "minus":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln - rn
+        if op == "times":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln * rn
+        if op == "divided by":
+            rn = _to_number(right)
+            if rn == 0:
+                raise RuntimeError_(
+                    "I can't divide by zero. Math says no!",
+                    e.right.location,
+                )
+            result = _to_number(left) / rn
+            # If both operands were ints and the result is whole, return an int.
+            if isinstance(left, int) and isinstance(right, int) and isinstance(result, float) and result.is_integer():
+                return int(result)
+            return result
+        if op == "mod":
+            ln, rn = _to_number(left), _to_number(right)
+            if rn == 0:
+                raise RuntimeError_(
+                    "I can't mod by zero.",
+                    e.right.location,
+                )
+            return ln % rn
+
+        if op == "is":
+            return left == right
+        if op == "is not equal to":
+            return left != right
+        if op == "is greater than":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln > rn
+        if op == "is less than":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln < rn
+        if op == "is greater than or equal to":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln >= rn
+        if op == "is less than or equal to":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln <= rn
+
+        raise RuntimeError_(f"I don't know the operator '{op}'.", e.location)
+
+    def _eval_unary(self, e: UnaryOp, env):
+        if e.op == "not":
+            return not _to_bool(self._eval(e.operand, env))
+        if e.op == "minus":
+            return -_to_number(self._eval(e.operand, env))
+        raise RuntimeError_(f"I don't know the operator '{e.op}'.", e.location)
+
+    def _eval_index(self, e: IndexExpression, env):
+        coll = self._eval(e.collection, env)
+        idx = self._eval(e.index, env)
+        idx_n = int(_to_number(idx))
+        if not isinstance(coll, list):
+            raise TypeError_(
+                f"I can't use 'at' on {_typename(coll)} ({_to_text(coll)}). "
+                f"`at` only works on lists.",
+                e.location,
+            )
+        if idx_n < 0:
+            idx_n += len(coll)
+        if idx_n < 0 or idx_n >= len(coll):
+            raise RuntimeError_(
+                f"I tried to get item {idx_n} from a list of size {len(coll)}, "
+                f"but that item doesn't exist (lists start at 0 and go to {len(coll) - 1}).",
+                e.index.location,
+            )
+        return coll[idx_n]
+
+    def _eval_size(self, e: SizeExpression, env):
+        coll = self._eval(e.collection, env)
+        if isinstance(coll, list):
+            return len(coll)
+        if isinstance(coll, str):
+            return len(coll)
+        raise TypeError_(
+            f"I can't get the size of {_typename(coll)} ({_to_text(coll)}). "
+            f"Use `size of` on a list or some text.",
+            e.location,
+        )
+
+    def _eval_with_added(self, e: WithAddedExpression, env):
+        coll = self._eval(e.collection, env)
+        if not isinstance(coll, list):
+            raise TypeError_(
+                f"I can only add to a list with 'with ... added', "
+                f"but I got {_typename(coll)} ({_to_text(coll)}).",
+                e.location,
+            )
+        value = self._eval(e.value, env)
+        return coll + [value]
+
+    def _eval_turtle_literal(self, e: TurtleLiteral, env):
+        """`turtle` — a marker for "create a new turtle". We need a name to
+        bind it to, but the parser already consumed the name via LetStatement.
+        However, in the existing LetStatement executor, we just call
+        `_eval(stmt.value, env)` and assign whatever it returns. So we
+        return a sentinel that `_exec_let` recognizes.
+
+        Actually, simpler: return a special wrapper and let the let-statement
+        executor do the create-and-bind itself. But that requires changing
+        the let executor. Cleaner: have `let ada be turtle` go through a
+        special path.
+
+        Decision: We return a `_TurtleFactory` sentinel here, and the
+        let-statement executor checks for it and creates the turtle."""
+        from src.turtle_runtime import Turtle as _T
+        # Return a placeholder; _exec_let will detect TurtleLiteral and
+        # create a new turtle with the bound name.
+        return _turtle_factory_marker()
+
+    def _eval_window_literal(self, e: WindowLiteral, env):
+        """`window` — a marker sentinel; _exec_let detects it and creates the window."""
+        return _window_factory_marker()
+
+    def _eval_text_of(self, e: TextOf, env):
+        """`text of btn` — read the current text value of a widget."""
+        widget_name = self._eval(e.widget, env)
+        if not isinstance(widget_name, str):
+            widget_name = e.widget.name if hasattr(e.widget, 'name') else str(widget_name)
+        return self.gui.get_text_of(widget_name)
+
+    def _eval_call(self, e: CallExpression, env):
+        name = e.callee
+        # Turtle property access: `ada heading` / `ada x` / `ada y`.
+        # The parser can't tell at parse time whether `ada` is a turtle
+        # or a function, so we dispatch at runtime: if the first argument
+        # is an Identifier and the callee is a Turtle, treat as property
+        # read.
+        if (len(e.arguments) == 1
+                and isinstance(e.arguments[0], Identifier)
+                and name in self.turtles.turtles):
+            t = self.turtles.get(name)
+            prop = e.arguments[0].name
+            if prop == "heading":
+                return t.heading
+            if prop == "x":
+                return t.x
+            if prop == "y":
+                return t.y
+            raise RuntimeError_(
+                f"I don't know what property '{prop}' means on a turtle. "
+                f"Try 'heading', 'x', or 'y'.",
+                e.location,
+            )
+
+        args = [self._eval(a, env) for a in e.arguments]
+
+        # Built-in first
+        if name in self._builtins:
+            return self._builtins[name](args, e.location)
+
+        # User-defined function
+        func = env.get_function(name)
+        if func is None:
+            raise NameError_(
+                f"I don't know a function called '{name}'.",
+                e.location,
+            )
+
+        if len(func.params) != len(args):
+            raise TypeError_(
+                f"The function '{name}' expects {len(func.params)} argument"
+                f"{'s' if len(func.params) != 1 else ''} "
+                f"but I got {len(args)}.",
+                e.location,
+            )
+
+        call_env = self.global_env.child() if func.name in self._builtins else env.child()
+        for pname, pval in zip(func.params, args):
+            call_env.define(pname, pval)
+        try:
+            self._exec_stmts(func.body, call_env)
+        except _ReturnSignal as ret:
+            return ret.value
+        return None
+
+    _EVAL_DISPATCH = {
+        NumberLiteral: _eval_number,
+        StringLiteral: _eval_string,
+        BoolLiteral: _eval_bool,
+        NothingLiteral: _eval_nothing,
+        Identifier: _eval_ident,
+        ListLiteral: _eval_list,
+        ConcatExpression: _eval_concat,
+        BinaryOp: _eval_binary,
+        UnaryOp: _eval_unary,
+        CallExpression: _eval_call,
+        IndexExpression: _eval_index,
+        SizeExpression: _eval_size,
+        WithAddedExpression: _eval_with_added,
+        TurtleLiteral: _eval_turtle_literal,
+        WindowLiteral: _eval_window_literal,
+        TextOf: _eval_text_of,
+    }
 

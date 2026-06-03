@@ -1,4 +1,4 @@
-# Lesson 11 — Recursive patterns with the turtle (turtle 2)
+# Lesson 12 — Recursive patterns with the turtle (turtle 2)
 
 **Goal:** Use recursion to make beautiful, surprising pictures.
 
@@ -245,4 +245,4 @@ Without looking:
 4. Can you write a function that draws a square using recursion? (You
    might not need it, but it's good practice.)
 
-If yes, on to Lesson 12 — reading errors and debugging!
+If yes, on to Lesson 13 — advanced GUI!

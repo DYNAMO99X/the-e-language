@@ -1,4 +1,4 @@
-# Lesson 7 — Saying it over and over (loops)
+# Lesson 8 — Saying it over and over (loops)
 
 **Goal:** Make the computer do the same thing many times without you
 having to copy-paste.
@@ -193,4 +193,4 @@ Without looking:
 2. Why does a counter need to "change" inside the loop?
 3. Can you draw a 12-sided shape (dodecagon)? What angle do you need?
 
-If yes, on to Lesson 8 — lists!
+If yes, on to Lesson 9 — lists!

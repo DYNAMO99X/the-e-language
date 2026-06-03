@@ -1,6 +1,6 @@
 # E — A Friendly Curriculum
 
-A 14-lesson course for absolute beginners (ages ~10 and up) who want to
+A 16-lesson course for absolute beginners (ages ~10 and up) who want to
 learn to code. The language is E, but the *thinking* you learn here is
 the same thinking Python, JavaScript, and every other language uses.
 
@@ -33,19 +33,21 @@ Total time: about 12–18 hours of instruction, depending on pace.
 | 3 | [Joining words](./03_strings.md) | The `,` concat operator |
 | 4 | [Doing math](./04_math.md) | `plus`, `minus`, `times`, `divided by`, `mod` |
 | 5 | [Turtle 1 — drawing!](./05_turtle_basics.md) | First drawings with the turtle |
-| 6 | [Making choices](./06_choices.md) | `if`, `else`, comparisons |
-| 7 | [Saying it over and over](./07_loops.md) | `repeat`, `while` |
-| 8 | [Lists](./08_lists.md) | Making collections of things |
-| 9 | [Your own commands](./09_functions.md) | `to ... end`, `return` |
-| 10 | [Functions calling themselves](./10_recursion.md) | Recursion |
-| 11 | [Turtle 2 — pretty patterns](./11_turtle_recursive.md) | Recursive turtle art |
-| 12 | [Reading error messages](./12_debugging.md) | What to do when things break |
-| 13 | [Planning a small project](./13_project_planning.md) | Combining it all |
-| 14 | [Capstone — tiny adventure](./14_capstone.md) | Build a text adventure game |
+| 6 | [GUI basics](./06_gui_basics.md) | Windows, buttons, labels, text inputs |
+| 7 | [Making choices](./07_choices.md) | `if`, `else`, comparisons |
+| 8 | [Saying it over and over](./08_loops.md) | `repeat`, `while` |
+| 9 | [Lists](./09_lists.md) | Making collections of things |
+| 10 | [Your own commands](./10_functions.md) | `to ... end`, `return` |
+| 11 | [Functions calling themselves](./11_recursion.md) | Recursion |
+| 12 | [Turtle 2 — pretty patterns](./12_turtle_recursive.md) | Recursive turtle art |
+| 13 | [Advanced GUI](./13_advanced_gui.md) | Events, handlers, turtle control panel |
+| 14 | [Reading error messages](./14_debugging.md) | What to do when things break |
+| 15 | [Planning a small project](./15_project_planning.md) | Combining it all |
+| 16 | [Capstone — tiny adventure](./16_capstone.md) | Build a text adventure game |
 
 ## After this
 
-When the student is comfortable with all 14 lessons, they're ready to
+When the student is comfortable with all 16 lessons, they're ready to
 move on to a "real" language. E is designed as a stepping stone between
 visual block programming (Scratch) and text programming. The
 [bridge_to_python.md](../bridge_to_python.md) doc shows how E maps to

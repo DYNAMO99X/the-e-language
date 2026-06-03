@@ -1,4 +1,4 @@
-# Lesson 6 — Making choices (if / else)
+# Lesson 7 — Making choices (if / else)
 
 **Goal:** Make the program do different things based on what the user
 types or what the math says.
@@ -99,7 +99,7 @@ end
 ```
 
 This is harder to read because of all the nested `end`s. There's
-a cleaner way coming in Lesson 7 once we know about loops. For now,
+a cleaner way coming in Lesson 8 once we know about loops. For now,
 **nesting is fine** — just count your `end`s and make sure they match.
 
 ## Tinker
@@ -149,4 +149,4 @@ Without looking:
 2. What's the difference between `=` and `is equal to` in E?
 3. Why does every `if` need an `end`?
 
-If yes, on to Lesson 7 — loops!
+If yes, on to Lesson 8 — loops!
