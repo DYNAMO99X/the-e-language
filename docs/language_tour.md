@@ -114,17 +114,29 @@ let age be number(ask "How old are you? ")
 
 ## Comparisons
 
-You can compare values with friendly English words:
+You can compare values with friendly English words or standard symbols:
 
-| Expression                    | Meaning          |
-|------------------------------|------------------|
-| `x is 5`                     | equal            |
-| `x is equal to 5`            | equal (verbose)  |
-| `x is not equal to 5`        | not equal        |
-| `x is greater than 5`        | >                |
-| `x is less than 5`           | <                |
-| `x is greater than or equal to 5` | >=          |
-| `x is less than or equal to 5`    | <=          |
+| Expression                    | Symbol | Meaning          |
+|------------------------------|--------|------------------|
+| `x is 5`                     | `x = 5` or `x == 5` | equal       |
+| `x is equal to 5`            | —      | equal (verbose)  |
+| `x is not equal to 5`        | `x != 5` | not equal      |
+| `x is greater than 5`        | `x > 5` | >                |
+| `x is less than 5`           | `x < 5` | <                |
+| `x is greater than or equal to 5` | `x >= 5` | >=          |
+| `x is less than or equal to 5`    | `x <= 5` | <=          |
+
+You can mix English and symbols freely:
+
+```e
+let age be 25
+
+-- all of these are equivalent:
+if age > 18 then say "adult" end
+if age is greater than 18 then say "adult" end
+if age >= 18 then say "adult" end
+if age is greater than or equal to 18 then say "adult" end
+```
 
 ```e
 if age is greater than 18 then

@@ -89,6 +89,50 @@ class TestLexerBasics(unittest.TestCase):
         self.assertEqual(toks[1], (TokenType.IDENT, "x"))
 
 
+class TestSymbolOperators(unittest.TestCase):
+    def test_greater_than(self):
+        self.assertEqual(lex(">"), [(TokenType.IS_GREATER, ">")])
+
+    def test_less_than(self):
+        self.assertEqual(lex("<"), [(TokenType.IS_LESS, "<")])
+
+    def test_greater_or_equal(self):
+        self.assertEqual(lex(">="), [(TokenType.IS_GREATER_EQ, ">=")])
+
+    def test_less_or_equal(self):
+        self.assertEqual(lex("<="), [(TokenType.IS_LESS_EQ, "<=")])
+
+    def test_equal_single(self):
+        self.assertEqual(lex("="), [(TokenType.IS, "=")])
+
+    def test_equal_double(self):
+        self.assertEqual(lex("=="), [(TokenType.IS, "=")])
+
+    def test_not_equal(self):
+        self.assertEqual(lex("!="), [(TokenType.IS_NOT_EQUAL, "!=")])
+
+    def test_bang_alone_raises(self):
+        from src.errors import LexerError
+        with self.assertRaises(LexerError):
+            lex("!")
+
+    def test_symbols_in_expression(self):
+        toks = lex("x > 5")
+        self.assertEqual(toks[0], (TokenType.IDENT, "x"))
+        self.assertEqual(toks[1], (TokenType.IS_GREATER, ">"))
+        self.assertEqual(toks[2], (TokenType.NUMBER, 5))
+
+    def test_mixed_english_and_symbol(self):
+        toks = lex("x is greater than 5 and y >= 3")
+        self.assertEqual(toks[0], (TokenType.IDENT, "x"))
+        self.assertEqual(toks[1], (TokenType.IS_GREATER, "is greater than"))
+        self.assertEqual(toks[2], (TokenType.NUMBER, 5))
+        self.assertEqual(toks[3], (TokenType.AND, "and"))
+        self.assertEqual(toks[4], (TokenType.IDENT, "y"))
+        self.assertEqual(toks[5], (TokenType.IS_GREATER_EQ, ">="))
+        self.assertEqual(toks[6], (TokenType.NUMBER, 3))
+
+
 class TestLexerNumbers(unittest.TestCase):
     def test_integer(self):
         self.assertEqual(lex("5"), [(TokenType.NUMBER, 5)])

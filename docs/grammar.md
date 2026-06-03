@@ -32,7 +32,7 @@ Multi-word (matched longest-first):
 - `divided by`
 
 ### Symbols
-`,` `(` `)` `[` `]`
+`,` `(` `)` `[` `]` `>` `<` `>=` `<=` `=` `==` `!=`
 
 ### Structural
 - `NEWLINE` — statement separator (optional in many places)
@@ -51,7 +51,7 @@ and           := unary_logic ("and" unary_logic)*
 unary_logic   := "not" unary_logic | comparison
 comparison    := additive (comp_op additive)?
    where comp_op ∈ { is, is not equal to, is greater than [or equal to],
-                     is less than [or equal to] }
+                     is less than [or equal to], =, ==, !=, >, <, >=, <= }
 additive      := multiplicative (("plus" | "minus") multiplicative)*
 multiplicative:= unary (("times" | "divided" "by" | "mod") unary)*
 unary         := "-" unary | postfix

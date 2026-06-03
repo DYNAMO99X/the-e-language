@@ -138,6 +138,68 @@ class TestInterpreterComparisons(unittest.TestCase):
         self.assertEqual(run("say 6 is less than or equal to 5"), "false\n")
 
 
+class TestSymbolComparisons(unittest.TestCase):
+    def test_greater_than(self):
+        self.assertEqual(run("say 10 > 5"), "true\n")
+        self.assertEqual(run("say 5 > 10"), "false\n")
+
+    def test_less_than(self):
+        self.assertEqual(run("say 5 < 10"), "true\n")
+        self.assertEqual(run("say 10 < 5"), "false\n")
+
+    def test_greater_or_equal(self):
+        self.assertEqual(run("say 5 >= 5"), "true\n")
+        self.assertEqual(run("say 4 >= 5"), "false\n")
+
+    def test_less_or_equal(self):
+        self.assertEqual(run("say 5 <= 5"), "true\n")
+        self.assertEqual(run("say 6 <= 5"), "false\n")
+
+    def test_equal_single(self):
+        self.assertEqual(run("say 5 = 5"), "true\n")
+        self.assertEqual(run("say 5 = 6"), "false\n")
+
+    def test_equal_double(self):
+        self.assertEqual(run("say 5 == 5"), "true\n")
+        self.assertEqual(run("say 5 == 6"), "false\n")
+
+    def test_not_equal(self):
+        self.assertEqual(run("say 5 != 6"), "true\n")
+        self.assertEqual(run("say 5 != 5"), "false\n")
+
+    def test_string_equality(self):
+        self.assertEqual(run('say "hello" == "hello"'), "true\n")
+        self.assertEqual(run('say "hello" = "hello"'), "true\n")
+        self.assertEqual(run('say "hello" != "world"'), "true\n")
+
+    def test_in_if(self):
+        src = '''
+        let x be 10
+        if x > 5 then
+            say "big"
+        end
+        '''
+        self.assertEqual(run(src), "big\n")
+
+    def test_mixed_english_and_symbol(self):
+        src = '''
+        let x be 10
+        if x is greater than 5 and x <= 15 then
+            say "ok"
+        end
+        '''
+        self.assertEqual(run(src), "ok\n")
+
+    def test_chained_with_and(self):
+        src = '''
+        let x be 7
+        if x >= 5 and x <= 10 then
+            say "in range"
+        end
+        '''
+        self.assertEqual(run(src), "in range\n")
+
+
 class TestInterpreterLogic(unittest.TestCase):
     def test_and(self):
         self.assertEqual(run("say true and true"), "true\n")

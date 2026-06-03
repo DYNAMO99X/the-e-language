@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Added clarification in README that this E is not the 1997 E language by Electric Communities
+- Added symbol comparison operators (`>`, `<`, `>=`, `<=`, `=`, `==`, `!=`) as alternatives to English keywords
 
 ## [0.1.0] - 2026-06-02
 

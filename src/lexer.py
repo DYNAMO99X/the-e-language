@@ -9,7 +9,7 @@ Handles:
 - Number literals (integers, decimals, and negative numbers at statement starts)
 - Identifiers and all keywords
 - Multi-word keywords (is greater than, is not equal to, divided by, ...)
-- Symbols: , ( ) [ ]
+- Symbols: , ( ) [ ] > < >= <= = == !=
 """
 
 from __future__ import annotations
@@ -298,6 +298,36 @@ class Lexer:
                 self._string(c)
             elif c.isdigit():
                 self._number()
+            elif c == ">":
+                self._advance()
+                if self._peek() == "=":
+                    self._advance()
+                    self._add(TokenType.IS_GREATER_EQ, ">=")
+                else:
+                    self._add(TokenType.IS_GREATER, ">")
+            elif c == "<":
+                self._advance()
+                if self._peek() == "=":
+                    self._advance()
+                    self._add(TokenType.IS_LESS_EQ, "<=")
+                else:
+                    self._add(TokenType.IS_LESS, "<")
+            elif c == "=":
+                self._advance()
+                if self._peek() == "=":
+                    self._advance()
+                self._add(TokenType.IS, "=")
+            elif c == "!":
+                self._advance()
+                if self._peek() == "=":
+                    self._advance()
+                    self._add(TokenType.IS_NOT_EQUAL, "!=")
+                else:
+                    raise LexerError(
+                        f"I ran into a character I don't understand: '!' "
+                        f"(line {self.line}, column {self.col}).",
+                        self._loc(self.line, self.col),
+                    )
             elif c == "-" and self._peek(1).isdigit() and not self._is_value_position():
                 # negative number literal (e.g. at start of statement, after
                 # newline, after a keyword like 'be', or after a symbol like '(')
