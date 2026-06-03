@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>E Playground</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%2300b4a0' width='100' height='100' rx='20'/><text x='50' y='68' font-size='60' font-family='monospace' font-weight='bold' fill='white' text-anchor='middle'>E</text></svg>">
+</head>
+<body>
+    <header>
+        <div class="logo">
+            <span class="logo-e">E</span>
+            <span class="logo-text">Playground</span>
+        </div>
+        <div class="header-controls">
+            <select id="example-select">
+                <option value="">-- Examples --</option>
+            </select>
+            <button id="run-btn" title="Run (Ctrl+Enter)">▶ Run</button>
+            <select id="theme-select" title="Theme">
+                <option value="dark">🌙 Dark</option>
+                <option value="light">☀ Light</option>
+                <option value="teal">🎨 Teal</option>
+            </select>
+        </div>
+    </header>
+
+    <main>
+        <div class="panel editor-panel">
+            <div class="panel-header">
+                <span>Editor</span>
+            </div>
+            <div id="editor"></div>
+        </div>
+
+        <div class="right-panels">
+            <div class="panel turtle-panel">
+                <div class="panel-header">
+                    <span>Turtle Canvas</span>
+                    <button id="clear-turtle" title="Clear canvas">🗑</button>
+                </div>
+                <div id="turtle-canvas-container">
+                    <svg id="turtle-canvas" viewBox="-300 -300 600 600"></svg>
+                </div>
+            </div>
+
+            <div class="panel output-panel">
+                <div class="panel-header">
+                    <span>Output</span>
+                    <button id="clear-output" title="Clear output">🗑</button>
+                </div>
+                <div id="output"></div>
+            </div>
+        </div>
+    </main>
+
+    <div id="loading-overlay">
+        <div class="loading-spinner"></div>
+        <p>Loading Pyodide...</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js"></script>
+    <script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
