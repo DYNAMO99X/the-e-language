@@ -5,6 +5,21 @@ All notable changes to the E language project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-06-03
+
+### Added
+- `+`, `-`, `*`, `/` as arithmetic operators alongside English keywords (`plus`, `minus`, `times`, `divided by`)
+- Web playground with Monaco editor, SVG turtle canvas, Pyodide runtime, 5 built-in examples
+- Help modal (`?` button) with quick reference, limitations, and download CTA
+- Draggable dividers to resize editor, turtle canvas, and output panels
+- Rotating fun loading messages while Pyodide initializes
+- 6 new unit tests for symbol arithmetic operators (243 total)
+
+### Fixed
+- Playground: replaced `ask`-based examples with hardcoded values (no stdin in browser)
+- Playground: replaced `repeat count` with manual counter (not implemented in E interpreter)
+- Playground: disable AMD loader during Pyodide init to fix `stackframe` 404 conflict with Monaco
+
 ## [0.2.0] - 2026-06-02
 
 ### Fixed
