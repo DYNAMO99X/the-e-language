@@ -1,347 +1,196 @@
-"""E Language Interpreter — Bundled for Pyodide (web playground).
+"""E Language Interpreter -- Bundled for Pyodide (web playground).
 
 This file combines all src/*.py modules into a single file so Pyodide
 can load it without needing a file system.
 """
+
 # --- src/errors.py ---
+"""E-friendly error types and reporting.
+
+All errors raised anywhere in the pipeline should be subclasses of EError
+so the entry point can catch a single type and display a friendly message.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
+
 @dataclass
 class SourceLocation:
-    line: int
-    column: int
-    name: str
+    """A single position in a source file."""
+    line: int       # 1-indexed
+    column: int     # 1-indexed
+    name: str       # filename or "<repl>"
+
 
 class EError(Exception):
+    """Base class for all E interpreter errors."""
     kind: str = "Error"
+
     def __init__(self, message: str, location: Optional[SourceLocation] = None):
         super().__init__(message)
         self.message = message
         self.location = location
+
     def format(self) -> str:
         loc = self.location
         if loc is None:
             return f"E {self.kind}: {self.message}"
         return f"E {self.kind} in {loc.name} on line {loc.line}: {self.message}"
 
+
 class LexerError(EError):
     kind = "LexerError"
+
 
 class ParseError(EError):
     kind = "ParseError"
 
+
 class RuntimeError_(EError):
     kind = "RuntimeError"
+
 
 class NameError_(EError):
     kind = "NameError"
 
+
 class TypeError_(EError):
     kind = "TypeError"
 
-# --- src.tokens ---
+
+def report_error(err: EError) -> None:
+    """Print a friendly, English-style error message."""
+    print(err.format())
+
+
+# --- src/tokens.py ---
+"""Token types and the Token dataclass for the E lexer.
+
+A token is a single meaningful chunk of source code — a keyword, a number,
+a string, a symbol, etc. The lexer scans source text and produces a flat
+list of these tokens for the parser to consume.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass
 from enum import Enum, auto
-from dataclasses import dataclass as dc
+from typing import Any
+
+
 
 class TokenType(Enum):
-    NUMBER = auto()
-    STRING = auto()
-    IDENT = auto()
-    LET = auto()
-    BE = auto()
-    SAY = auto()
-    ASK = auto()
-    IF = auto()
-    THEN = auto()
-    ELSE = auto()
-    END = auto()
-    WHILE = auto()
-    REPEAT = auto()
-    TIMES = auto()
-    FOR = auto()
-    EACH = auto()
-    IN = auto()
-    TO = auto()
-    RETURN = auto()
-    TRUE = auto()
-    FALSE = auto()
-    NOTHING = auto()
-    AND = auto()
-    OR = auto()
-    NOT = auto()
-    IS = auto()
-    IS_NOT_EQUAL = auto()
-    IS_GREATER = auto()
-    IS_LESS = auto()
-    IS_GREATER_EQ = auto()
-    IS_LESS_EQ = auto()
-    PLUS = auto()
-    MINUS = auto()
-    TIMES_KW = auto()
-    DIVIDED = auto()
-    BY = auto()
-    MOD = auto()
-    COMMA = auto()
-    LPAREN = auto()
-    RPAREN = auto()
-    LBRACKET = auto()
-    RBRACKET = auto()
-    AT = auto()
-    WITH = auto()
-    ADDED = auto()
-    SIZE = auto()
-    OF = auto()
-    TURTLE = auto()
-    MOVE = auto()
-    MAKE = auto()
-    GOTO = auto()
-    SET = auto()
-    NEWLINE = auto()
+    # --- Literals ---
+    NUMBER = auto()        # 5, 3.14
+    STRING = auto()        # "hello"
+    IDENT = auto()         # variable / function names
+
+    # --- Keywords ---
+    LET = auto()           # let
+    BE = auto()            # be
+    SAY = auto()           # say
+    ASK = auto()           # ask
+    IF = auto()            # if
+    THEN = auto()          # then
+    ELSE = auto()          # else
+    END = auto()           # end  (closes if / while / repeat / for / function)
+    WHILE = auto()         # while
+    REPEAT = auto()        # repeat
+    TIMES = auto()         # times
+    FOR = auto()           # for
+    EACH = auto()          # each
+    IN = auto()            # in
+    TO = auto()            # to  (function definition: "to greet name")
+    RETURN = auto()        # return
+    TRUE = auto()          # true
+    FALSE = auto()         # false
+    NOTHING = auto()       # nothing
+    AND = auto()           # and
+    OR = auto()            # or
+    NOT = auto()           # not
+
+    # --- Comparison operators (as keywords / multi-word) ---
+    IS = auto()            # is / is equal to
+    IS_NOT_EQUAL = auto()  # is not equal to
+    IS_GREATER = auto()    # is greater than
+    IS_LESS = auto()       # is less than
+    IS_GREATER_EQ = auto() # is greater than or equal to
+    IS_LESS_EQ = auto()    # is less than or equal to
+
+    # --- Math operators (as keywords) ---
+    PLUS = auto()          # plus
+    MINUS = auto()         # minus
+    TIMES_KW = auto()      # times (used as math operator too)
+    DIVIDED = auto()       # divided
+    BY = auto()            # by
+    MOD = auto()           # mod
+
+    # --- Math operators (as symbols) ---
+    STAR = auto()          # *
+    SLASH = auto()         # /
+
+    # --- Symbols / punctuation ---
+    COMMA = auto()         # ,  (concatenation)
+    LPAREN = auto()        # (
+    RPAREN = auto()        # )
+    LBRACKET = auto()      # [
+    RBRACKET = auto()      # ]
+    AT = auto()            # at    (list index: nums at 0)
+    WITH = auto()          # with  (list add: nums with 6 added)
+    ADDED = auto()         # added
+    SIZE = auto()          # size of
+    OF = auto()            # of    (used in "size of nums")
+
+    # --- Turtle drawing ---
+    TURTLE = auto()        # turtle  (the type/value in "let ada be turtle")
+    MOVE = auto()          # move    ("move ada forward 50")
+    MAKE = auto()          # make    ("make ada hide", "make ada draw circle 50")
+    GOTO = auto()          # goto    ("make ada goto 50 right and 20 up")
+    SET = auto()           # set     ("set ada pen color to 'red'")
+
+    # --- Structural ---
+    NEWLINE = auto()       # statement separator (optional in many places)
     EOF = auto()
 
-@dc
+
+@dataclass
 class Token:
     type: TokenType
-    value: object
+    value: Any             # the textual value, or a parsed Python value for literals
     location: SourceLocation
 
-# --- src.ast_nodes ---
-from dataclasses import dataclass, field
-from typing import List, Any, Optional
+    def __repr__(self) -> str:
+        return f"Token({self.type.name}, {self.value!r}, L{self.location.line})"
 
-@dc
-class Program:
-    statements: List[Any] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
 
-class Statement: pass
+# --- src/lexer.py ---
+"""Lexer for the E language.
 
-@dc
-class LetStatement(Statement):
-    name: str = ""
-    value: Any = None
-    location: Optional[SourceLocation] = None
+Turns raw source text into a stream of tokens.
 
-@dc
-class SayStatement(Statement):
-    parts: List[Any] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
+Handles:
+- Whitespace and newlines
+- Line comments starting with --
+- String literals "..."
+- Number literals (integers, decimals, and negative numbers at statement starts)
+- Identifiers and all keywords
+- Multi-word keywords (is greater than, is not equal to, divided by, ...)
+- Symbols: , ( ) [ ] > < >= <= = == !=
+"""
 
-@dc
-class AskStatement(Statement):
-    prompt: Any = None
-    location: Optional[SourceLocation] = None
+from __future__ import annotations
+from typing import List, Optional
 
-@dc
-class IfStatement(Statement):
-    condition: Any = None
-    then_branch: List[Statement] = field(default_factory=list)
-    else_branch: Optional[List[Statement]] = None
-    location: Optional[SourceLocation] = None
 
-@dc
-class WhileStatement(Statement):
-    condition: Any = None
-    body: List[Statement] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
 
-@dc
-class RepeatStatement(Statement):
-    count: Any = None
-    body: List[Statement] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
-
-@dc
-class ForEachStatement(Statement):
-    var_name: str = ""
-    iterable: Any = None
-    body: List[Statement] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
-
-@dc
-class FunctionDef(Statement):
-    name: str = ""
-    params: List[str] = field(default_factory=list)
-    body: List[Statement] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
-
-@dc
-class ReturnStatement(Statement):
-    value: Any = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class ExpressionStatement(Statement):
-    expression: Any = None
-    location: Optional[SourceLocation] = None
-
-class Expression: pass
-
-@dc
-class NumberLiteral(Expression):
-    value: float = 0
-    location: Optional[SourceLocation] = None
-
-@dc
-class StringLiteral(Expression):
-    value: str = ""
-    location: Optional[SourceLocation] = None
-
-@dc
-class BoolLiteral(Expression):
-    value: bool = False
-    location: Optional[SourceLocation] = None
-
-@dc
-class NothingLiteral(Expression):
-    location: Optional[SourceLocation] = None
-
-@dc
-class Identifier(Expression):
-    name: str = ""
-    location: Optional[SourceLocation] = None
-
-@dc
-class ListLiteral(Expression):
-    elements: List[Expression] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
-
-@dc
-class ConcatExpression(Expression):
-    parts: List[Expression] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
-
-@dc
-class BinaryOp(Expression):
-    op: str = ""
-    left: Expression = None
-    right: Expression = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class UnaryOp(Expression):
-    op: str = ""
-    operand: Expression = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class CallExpression(Expression):
-    callee: str = ""
-    arguments: List[Expression] = field(default_factory=list)
-    location: Optional[SourceLocation] = None
-
-@dc
-class IndexExpression(Expression):
-    collection: Expression = None
-    index: Expression = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class SizeExpression(Expression):
-    collection: Expression = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class WithAddedExpression(Expression):
-    collection: Expression = None
-    value: Expression = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class TurtleLiteral(Expression):
-    location: Optional[SourceLocation] = None
-
-@dc
-class MoveStatement(Statement):
-    turtle_name: str = ""
-    direction: str = ""
-    amount: Any = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class MakeStatement(Statement):
-    turtle_name: str = ""
-    action: str = ""
-    arg: Optional[Expression] = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class GotoStatement(Statement):
-    turtle_name: str = ""
-    x_amount: Any = None
-    x_dir: str = ""
-    y_amount: Any = None
-    y_dir: str = ""
-    location: Optional[SourceLocation] = None
-
-@dc
-class SetStatement(Statement):
-    turtle_name: str = ""
-    property: str = ""
-    value: Any = None
-    location: Optional[SourceLocation] = None
-
-@dc
-class TurtlePropertyAccess(Expression):
-    turtle_name: str = ""
-    property: str = ""
-    location: Optional[SourceLocation] = None
-
-# --- src.environment ---
-class Environment:
-    def __init__(self, parent=None):
-        self.parent = parent
-        self.variables = {}
-        self.functions = {}
-
-    def define(self, name, value):
-        self.variables[name] = value
-
-    def get(self, name):
-        env = self
-        while env is not None:
-            if name in env.variables:
-                return env.variables[name]
-            env = env.parent
-        raise KeyError(name)
-
-    def set(self, name, value):
-        env = self
-        while env is not None:
-            if name in env.variables:
-                env.variables[name] = value
-                return
-            env = env.parent
-        raise KeyError(name)
-
-    def has(self, name):
-        env = self
-        while env is not None:
-            if name in env.variables:
-                return True
-            env = env.parent
-        return False
-
-    def define_function(self, name, func):
-        self.functions[name] = func
-
-    def get_function(self, name):
-        env = self
-        while env is not None:
-            if name in env.functions:
-                return env.functions[name]
-            env = env.parent
-        return None
-
-    def child(self):
-        return Environment(parent=self)
-
-# --- src.lexer ---
-from typing import List as _List
-
-_MULTI_WORD = {
+# Multi-word phrases. Key = the FIRST word (lowercase). Value is an ordered
+# list of (tail_words, token_type) pairs, longest tail first so the most
+# specific phrase is preferred.
+#
+# Example: for "is", we try "is not equal to" before "is equal to" before
+# "is greater than or equal to" before "is greater than".
+_MULTI_WORD: dict = {
     "is": [
         (("not", "equal", "to"), TokenType.IS_NOT_EQUAL),
         (("equal", "to"), TokenType.IS),
@@ -355,47 +204,75 @@ _MULTI_WORD = {
     ],
 }
 
-_KEYWORDS = {
-    "let": TokenType.LET, "be": TokenType.BE, "say": TokenType.SAY,
-    "ask": TokenType.ASK, "if": TokenType.IF, "then": TokenType.THEN,
-    "else": TokenType.ELSE, "end": TokenType.END, "while": TokenType.WHILE,
-    "repeat": TokenType.REPEAT, "times": TokenType.TIMES,
-    "for": TokenType.FOR, "each": TokenType.EACH, "in": TokenType.IN,
-    "to": TokenType.TO, "return": TokenType.RETURN,
-    "true": TokenType.TRUE, "false": TokenType.FALSE,
+# Single-word keywords. Every multi-word starter should ALSO be here, so the
+# user can use the short form (e.g. just "is" for equality).
+_KEYWORDS: dict = {
+    "let": TokenType.LET,
+    "be": TokenType.BE,
+    "say": TokenType.SAY,
+    "ask": TokenType.ASK,
+    "if": TokenType.IF,
+    "then": TokenType.THEN,
+    "else": TokenType.ELSE,
+    "end": TokenType.END,
+    "while": TokenType.WHILE,
+    "repeat": TokenType.REPEAT,
+    "times": TokenType.TIMES,
+    "for": TokenType.FOR,
+    "each": TokenType.EACH,
+    "in": TokenType.IN,
+    "to": TokenType.TO,
+    "return": TokenType.RETURN,
+    "true": TokenType.TRUE,
+    "false": TokenType.FALSE,
     "nothing": TokenType.NOTHING,
-    "and": TokenType.AND, "or": TokenType.OR, "not": TokenType.NOT,
-    "plus": TokenType.PLUS, "minus": TokenType.MINUS, "mod": TokenType.MOD,
-    "is": TokenType.IS, "by": TokenType.BY, "at": TokenType.AT,
-    "with": TokenType.WITH, "added": TokenType.ADDED,
-    "size": TokenType.SIZE, "of": TokenType.OF,
-    "turtle": TokenType.TURTLE, "move": TokenType.MOVE,
-    "make": TokenType.MAKE, "goto": TokenType.GOTO, "set": TokenType.SET,
+    "and": TokenType.AND,
+    "or": TokenType.OR,
+    "not": TokenType.NOT,
+    "plus": TokenType.PLUS,
+    "minus": TokenType.MINUS,
+    "mod": TokenType.MOD,
+    "is": TokenType.IS,
+    "by": TokenType.BY,
+    "at": TokenType.AT,
+    "with": TokenType.WITH,
+    "added": TokenType.ADDED,
+    "size": TokenType.SIZE,
+    "of": TokenType.OF,
+    # Turtle drawing keywords
+    "turtle": TokenType.TURTLE,
+    "move": TokenType.MOVE,
+    "make": TokenType.MAKE,
+    "goto": TokenType.GOTO,
+    "set": TokenType.SET,
 }
 
+
 class Lexer:
-    def __init__(self, source, name="<source>"):
+    def __init__(self, source: str, name: str = "<source>"):
         self.source = source
         self.name = name
         self.start = 0
         self.current = 0
         self.line = 1
         self.col = 1
-        self.tokens = []
+        self.tokens: List[Token] = []
 
-    def _loc(self, line, col):
+    # ---------- low-level helpers ----------
+
+    def _loc(self, line: int, col: int) -> SourceLocation:
         return SourceLocation(line=line, column=col, name=self.name)
 
-    def _is_at_end(self):
+    def _is_at_end(self) -> bool:
         return self.current >= len(self.source)
 
-    def _peek(self, offset=0):
+    def _peek(self, offset: int = 0) -> str:
         idx = self.current + offset
         if idx >= len(self.source):
             return "\0"
         return self.source[idx]
 
-    def _advance(self):
+    def _advance(self) -> str:
         ch = self.source[self.current]
         self.current += 1
         if ch == "\n":
@@ -405,28 +282,39 @@ class Lexer:
             self.col += 1
         return ch
 
-    def _add(self, ttype, value=None, loc=None):
+    def _add(self, ttype: TokenType, value=None, loc: Optional[SourceLocation] = None) -> None:
+        """Append a token. `value` defaults to the source text for this token."""
         if value is None:
             value = self.source[self.start:self.current]
         if loc is None:
             loc = self._loc(self.line, self.col)
         self.tokens.append(Token(ttype, value, loc))
 
-    def _word_at(self, pos):
+    # ---------- lookahead for multi-word phrases ----------
+
+    def _word_at(self, pos: int) -> tuple:
+        """Read a single word (letters/digits/underscore) starting at pos.
+        Returns (word, end_pos). The word does NOT cross newlines."""
         i = pos
         while i < len(self.source) and (self.source[i].isalnum() or self.source[i] == "_"):
             i += 1
         return self.source[pos:i], i
 
-    def _try_multi_word(self, word_text, word_lower):
+    def _try_multi_word(self, word_text: str, word_lower: str) -> bool:
+        """If the current word is the start of a multi-word phrase and that
+        phrase matches the upcoming text, consume the phrase, emit the
+        appropriate token, and return True. Otherwise return False."""
         if word_lower not in _MULTI_WORD:
             return False
+
         for tail, ttype in _MULTI_WORD[word_lower]:
             probe = self.current
+            # Require a single space (or tab) between the start word and the tail.
             if probe >= len(self.source) or self.source[probe] not in (" ", "\t"):
                 continue
             probe += 1
-            matched = []
+
+            matched: List[str] = []
             ok = True
             for i, expected in enumerate(tail):
                 w, end = self._word_at(probe)
@@ -435,57 +323,85 @@ class Lexer:
                     break
                 matched.append(w)
                 probe = end
+                # Between tail words, require a single space (not the very last
+                # one, which can be followed by anything that terminates a word).
                 is_last = (i == len(tail) - 1)
                 if not is_last:
                     if probe >= len(self.source) or self.source[probe] not in (" ", "\t"):
                         ok = False
                         break
                     probe += 1
+
             if not ok:
                 continue
+
+            # After the matched phrase, we must be at a word boundary (so we
+            # don't accidentally eat the start of the next identifier).
             if probe < len(self.source):
                 ch = self.source[probe]
                 if ch.isalnum() or ch == "_":
                     continue
+
+            # All checks passed. Consume the tail.
             while self.current < probe:
                 self._advance()
             self._add(ttype, word_text + " " + " ".join(matched))
             return True
+
         return False
 
-    def _string(self, quote_char):
+    # ---------- token scanners ----------
+
+    def _string(self, quote_char: str) -> None:
+        """Read a string literal delimited by `quote_char`.
+
+        E supports three equivalent string delimiters: `"`, `'`, and `` ` ``.
+        They all support the same escape sequences (`\n`, `\t`, `\\`, `\"`,
+        `\'`, `` \` ``), and cross-quote escapes work too (e.g. `\'` inside
+        `"..."`).
+        """
         start_line = self.line
         start_col = self.col
-        self._advance()
-        value_chars = []
+        self._advance()  # opening quote
+        value_chars: List[str] = []
         while not self._is_at_end() and self._peek() != quote_char:
             ch = self._advance()
             if ch == "\\" and not self._is_at_end():
+                # Escape sequence: \n \t \" \' \` \\
                 esc = self._advance()
-                mapping = {"n": "\n", "t": "\t", "\\": "\\", '"': '"', "'": "'", "`": "`"}
+                mapping = {
+                    "n": "\n",
+                    "t": "\t",
+                    "\\": "\\",
+                    '"': '"',
+                    "'": "'",
+                    "`": "`",
+                }
                 value_chars.append(mapping.get(esc, esc))
             else:
                 value_chars.append(ch)
         if self._is_at_end():
             raise LexerError(
-                f"I started reading a string on line {start_line} but never found the closing {quote_char}.",
+                f"I started reading a string on line {start_line} but never "
+                f"found the closing {quote_char}.",
                 self._loc(start_line, start_col),
             )
-        self._advance()
-        self._add(TokenType.STRING, "".join(value_chars), loc=self._loc(start_line, start_col))
+        self._advance()  # closing quote
+        self._add(TokenType.STRING, "".join(value_chars),
+                  loc=self._loc(start_line, start_col))
 
-    def _number(self, is_negative=False):
+    def _number(self, is_negative: bool = False) -> None:
         if is_negative:
-            self._advance()
+            self._advance()  # consume the leading '-'
         while not self._is_at_end() and self._peek().isdigit():
             self._advance()
         if self._peek() == "." and self._peek(1).isdigit():
-            self._advance()
+            self._advance()  # dot
             while not self._is_at_end() and self._peek().isdigit():
                 self._advance()
         text = self.source[self.start:self.current]
         try:
-            value = float(text)
+            value: float = float(text)
             if value.is_integer() and "." not in text:
                 value = int(value)
         except ValueError:
@@ -495,19 +411,28 @@ class Lexer:
             )
         self._add(TokenType.NUMBER, value)
 
-    def _word(self):
+    def _word(self) -> None:
+        # read the whole identifier
         while not self._is_at_end() and (self._peek().isalnum() or self._peek() == "_"):
             self._advance()
         word_text = self.source[self.start:self.current]
         word_lower = word_text.lower()
+
+        # Try to extend into a multi-word phrase first.
         if self._try_multi_word(word_text, word_lower):
             return
+
+        # Single-word keyword?
         if word_lower in _KEYWORDS:
             self._add(_KEYWORDS[word_lower], word_text)
             return
+
+        # Otherwise it's an identifier.
         self._add(TokenType.IDENT, word_text)
 
-    def _is_value_position(self):
+    def _is_value_position(self) -> bool:
+        """True if the previous token is one that ENDS a value
+        (a number, string, ident, etc.) — meaning a `-` here is binary minus."""
         if not self.tokens:
             return False
         prev_type = self.tokens[-1].type
@@ -518,19 +443,23 @@ class Lexer:
         }
         return prev_type in value_enders
 
-    def tokenize(self):
+    # ---------- main loop ----------
+
+    def tokenize(self) -> List[Token]:
         while not self._is_at_end():
             self.start = self.current
             c = self._peek()
-            if c in (" ", "\t", "\r"):
+
+            if c == " " or c == "\t" or c == "\r":
                 self._advance()
             elif c == "\n":
                 self._add(TokenType.NEWLINE, "\n")
                 self._advance()
             elif c == "-" and self._peek(1) == "-":
+                # line comment: skip to end of line
                 while not self._is_at_end() and self._peek() != "\n":
                     self._advance()
-            elif c in ('"', "'", "`"):
+            elif c == '"' or c == "'" or c == "`":
                 self._string(c)
             elif c.isdigit():
                 self._number()
@@ -562,12 +491,16 @@ class Lexer:
                     self._add(TokenType.IS_NOT_EQUAL, "!=")
                 else:
                     raise LexerError(
-                        f"I ran into a character I don't understand: '!' (line {self.line}, column {self.col}).",
+                        f"I ran into a character I don't understand: '!' "
+                        f"(line {self.line}, column {self.col}).",
                         self._loc(self.line, self.col),
                     )
             elif c == "-" and self._peek(1).isdigit() and not self._is_value_position():
+                # negative number literal (e.g. at start of statement, after
+                # newline, after a keyword like 'be', or after a symbol like '(')
                 self._number(is_negative=True)
             elif c == "-":
+                # binary minus
                 self._advance()
                 self._add(TokenType.MINUS, "-")
             elif c.isalpha() or c == "_":
@@ -587,132 +520,523 @@ class Lexer:
             elif c == "]":
                 self._advance()
                 self._add(TokenType.RBRACKET, "]")
+            elif c == "+":
+                self._advance()
+                self._add(TokenType.PLUS, "+")
+            elif c == "*":
+                self._advance()
+                self._add(TokenType.STAR, "*")
+            elif c == "/":
+                self._advance()
+                self._add(TokenType.SLASH, "/")
             else:
                 raise LexerError(
-                    f"I ran into a character I don't understand: '{c}' (line {self.line}, column {self.col}).",
+                    f"I ran into a character I don't understand: '{c}' "
+                    f"(line {self.line}, column {self.col}).",
                     self._loc(self.line, self.col),
                 )
+
         self.tokens.append(Token(TokenType.EOF, "", self._loc(self.line, self.col)))
         return self.tokens
 
-# --- src.parser ---
-from typing import Set as _Set
 
-_EXPR_START = {
+# --- src/ast_nodes.py ---
+"""Abstract Syntax Tree (AST) node definitions for E.
+
+The parser turns tokens into a tree of these nodes, and the interpreter
+walks the tree to actually run the program.
+
+Each node has a `kind` (its type) and a `location` for error reporting.
+Field names are descriptive so reading the tree is easy.
+"""
+
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import List, Any, Optional
+
+
+
+# --- Program / statements ---------------------------------------------------
+
+@dataclass
+class Program:
+    statements: List["Statement"] = field(default_factory=list)
+    location: Optional[SourceLocation] = None
+
+
+class Statement:
+    pass
+
+
+@dataclass
+class LetStatement(Statement):
+    """`let x be 5`"""
+    name: str
+    value: "Expression"
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class SayStatement(Statement):
+    """`say x` or `say "hi" , name`"""
+    parts: List["Expression"]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class AskStatement(Statement):
+    """`ask "prompt: "`  (used inside `let name be ask ...`)"""
+    prompt: "Expression"
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class IfStatement(Statement):
+    """`if cond then ... else ... end` (else is a list of statements)"""
+    condition: "Expression"
+    then_branch: List[Statement]
+    else_branch: Optional[List[Statement]] = None
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class WhileStatement(Statement):
+    """`while cond ... end`"""
+    condition: "Expression"
+    body: List[Statement]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class RepeatStatement(Statement):
+    """`repeat 5 times ... end`"""
+    count: "Expression"
+    body: List[Statement]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ForEachStatement(Statement):
+    """`for each item in items ... end`"""
+    var_name: str
+    iterable: "Expression"
+    body: List[Statement]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class FunctionDef(Statement):
+    """`to greet name ... end`"""
+    name: str
+    params: List[str]
+    body: List[Statement]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ReturnStatement(Statement):
+    """`return x`"""
+    value: Optional["Expression"]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ExpressionStatement(Statement):
+    """A bare expression used as a statement (e.g. function call)."""
+    expression: "Expression"
+    location: Optional[SourceLocation] = None
+
+
+# --- Expressions ------------------------------------------------------------
+
+class Expression:
+    pass
+
+
+@dataclass
+class NumberLiteral(Expression):
+    value: float
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class StringLiteral(Expression):
+    value: str
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class BoolLiteral(Expression):
+    value: bool
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class NothingLiteral(Expression):
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class Identifier(Expression):
+    name: str
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ListLiteral(Expression):
+    elements: List[Expression]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class ConcatExpression(Expression):
+    """`a , b , c` — joins left-to-right as strings."""
+    parts: List[Expression]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class BinaryOp(Expression):
+    """Generic two-operand math or comparison op."""
+    op: str           # 'plus', 'minus', 'times', 'divided by', 'mod',
+                      # 'is', 'is not equal to', 'is greater than', etc.
+    left: Expression
+    right: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class UnaryOp(Expression):
+    op: str           # 'not' / 'minus' (negation)
+    operand: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class CallExpression(Expression):
+    callee: str
+    arguments: List[Expression]
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class IndexExpression(Expression):
+    """`nums at 0`"""
+    collection: Expression
+    index: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class SizeExpression(Expression):
+    """`size of nums`"""
+    collection: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class WithAddedExpression(Expression):
+    """`nums with 6 added`"""
+    collection: Expression
+    value: Expression
+    location: Optional[SourceLocation] = None
+
+
+# --- Turtle drawing ---------------------------------------------------------
+
+@dataclass
+class TurtleLiteral(Expression):
+    """`turtle` — used on the RHS of `let ada be turtle` to create a new turtle."""
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class MoveStatement(Statement):
+    """`move ada forward 50` / `move ada right 20` / etc.
+
+    `direction` is one of: 'forward', 'backward', 'left', 'right'.
+    `amount` is a numeric expression (in pixels for forward/backward,
+    in degrees for left/right).
+    """
+    turtle_name: str
+    direction: str       # 'forward' | 'backward' | 'left' | 'right'
+    amount: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class MakeStatement(Statement):
+    """`make ada hide` / `make ada show` / `make ada close pen` /
+    `make ada open pen` / `make ada erase all` / `make ada restart` /
+    `make ada go home` / `make ada draw circle 50` /
+    `make ada draw dot 5` / `make ada speed 5` /
+    `make ada go to 50 and 20` (raw goto) /
+    `make ada goto 50 right and 20 up` (relative goto).
+
+    `action` is the action keyword (string). For most actions `arg` is None;
+    for actions that take a value (`draw circle`, `draw dot`, `speed`,
+    `go to`), `arg` is a numeric expression.
+    """
+    turtle_name: str
+    action: str          # 'hide' | 'show' | 'pen_up' | 'pen_down' | 'erase_all' |
+                         # 'restart' | 'home' | 'draw_circle' | 'draw_dot' |
+                         # 'speed' | 'go_to'
+    arg: Optional[Expression] = None
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class GotoStatement(Statement):
+    """`make ada goto 50 right and 20 up` — relative goto with direction words.
+
+    `x_dir` and `y_dir` are 'right'/'left' and 'up'/'down' respectively.
+    `x_amount` and `y_amount` are the magnitudes.
+    """
+    turtle_name: str
+    x_amount: Expression
+    x_dir: str           # 'right' | 'left'
+    y_amount: Expression
+    y_dir: str           # 'up' | 'down'
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class SetStatement(Statement):
+    """`set ada pen color to 'red'` / `set ada pen size to '3'` /
+    `set ada background to 'white'`.
+
+    `property` is a string like 'pen color', 'pen size', or 'background'.
+    """
+    turtle_name: str
+    property: str
+    value: Expression
+    location: Optional[SourceLocation] = None
+
+
+@dataclass
+class TurtlePropertyAccess(Expression):
+    """`ada heading` / `ada x` / `ada y` — reads a property of a turtle.
+
+    At parse time this looks like a function call (`ada` with arg `heading`),
+    but at runtime the interpreter dispatches: if `ada` is a Turtle, this
+    reads the property; if `ada` is a function, this is a regular call.
+    """
+    turtle_name: str
+    property: str        # 'heading' | 'x' | 'y'
+    location: Optional[SourceLocation] = None
+
+
+# --- src/parser.py ---
+"""Parser for the E language.
+
+Turns a flat list of tokens into an Abstract Syntax Tree (AST).
+
+Expression grammar (lowest to highest precedence):
+    expression  := concat
+    concat      := or ("," or)*
+    or          := and ("or" and)*
+    and         := unary ("and" unary)*
+    unary       := "not" unary | comparison
+    comparison  := additive (comp_op additive)?
+    additive    := multiplicative (("plus" | "minus") multiplicative)*
+    multiplicative := unary_minus (("times" | "divided" "by" | "mod") unary_minus)*
+    unary_minus := "-" unary_minus | postfix
+    postfix     := primary ("at" expression | "with" expression "added")*
+    primary     := "size" "of" primary
+                 | NUMBER | STRING | TRUE | FALSE | NOTHING
+                 | IDENT ( expression ("," expression)* )?   -- function call
+                 | IDENT                                          -- identifier
+                 | "ask" expression                                -- input
+                 | "[" (expression ("," expression)*)? "]"
+                 | "(" expression ")"
+
+Statement grammar:
+    program     := (statement NEWLINE?)*
+    statement   := "let" IDENT "be" expression
+                 | "say" expression
+                 | "if" expression "then" block ("else" block)? "end"
+                 | "while" expression block "end"
+                 | "repeat" expression "times" block "end"
+                 | "for" "each" IDENT "in" expression block "end"
+                 | "to" IDENT (IDENT)* block "end"
+                 | "return" expression?
+                 | expression
+"""
+
+from __future__ import annotations
+from typing import List, Optional, Set
+
+    Program, Statement, LetStatement, SayStatement, IfStatement,
+    WhileStatement, RepeatStatement, ForEachStatement, FunctionDef,
+    ReturnStatement, ExpressionStatement,
+    NumberLiteral, StringLiteral, BoolLiteral, NothingLiteral, Identifier,
+    ListLiteral, ConcatExpression, BinaryOp, UnaryOp, CallExpression,
+    IndexExpression, SizeExpression, WithAddedExpression,
+    TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
+)
+
+
+# Tokens that START an expression. Used to decide whether an IDENT is
+# followed by arguments (i.e. a function call). Note: MINUS is NOT here
+# because after an identifier, `-` is a binary subtraction, not unary minus.
+# Unary minus is still handled correctly via parse_unary() at the start of
+# an expression.
+_EXPR_START: Set[TokenType] = {
     TokenType.NUMBER, TokenType.STRING, TokenType.IDENT,
     TokenType.TRUE, TokenType.FALSE, TokenType.NOTHING,
-    TokenType.LPAREN, TokenType.LBRACKET, TokenType.NOT, TokenType.SIZE,
+    TokenType.LPAREN, TokenType.LBRACKET, TokenType.NOT,
+    TokenType.SIZE,  # 'size of X'
 }
-_BLOCK_END = {TokenType.END, TokenType.ELSE, TokenType.EOF}
-_STMT_START = {
+
+# Tokens that END a block (no statements after these in the current block).
+_BLOCK_END: Set[TokenType] = {TokenType.END, TokenType.ELSE, TokenType.EOF}
+
+# Tokens that begin a new statement (so the previous statement is done).
+_STMT_START: Set[TokenType] = {
     TokenType.LET, TokenType.SAY, TokenType.IF, TokenType.WHILE,
     TokenType.REPEAT, TokenType.FOR, TokenType.TO, TokenType.RETURN,
     TokenType.MOVE, TokenType.MAKE, TokenType.SET,
 }
 
+
 class Parser:
-    def __init__(self, tokens, name="<source>"):
+    def __init__(self, tokens: List[Token], name: str = "<source>"):
         self.tokens = tokens
         self.name = name
         self.pos = 0
 
-    def _peek(self, offset=0):
+    # ---------- helpers ----------
+
+    def _peek(self, offset: int = 0) -> Token:
         idx = self.pos + offset
         if idx >= len(self.tokens):
-            return self.tokens[-1]
+            return self.tokens[-1]  # EOF
         return self.tokens[idx]
 
-    def _at_end(self):
+    def _at_end(self) -> bool:
         return self._peek().type == TokenType.EOF
 
-    def _advance(self):
+    def _advance(self) -> Token:
         tok = self.tokens[self.pos]
         self.pos += 1
         return tok
 
-    def _check(self, ttype):
+    def _check(self, ttype: TokenType) -> bool:
         return self._peek().type == ttype
 
-    def _match(self, *ttype):
+    def _match(self, *ttype: TokenType) -> Optional[Token]:
         if self._peek().type in ttype:
             return self._advance()
         return None
 
-    def _expect(self, ttype, message):
+    def _expect(self, ttype: TokenType, message: str) -> Token:
         tok = self._peek()
         if tok.type != ttype:
             raise ParseError(
-                f"{message} (I found '{tok.value}' on line {tok.location.line}, column {tok.location.column} instead.)",
+                f"{message} (I found '{tok.value}' on line {tok.location.line}, "
+                f"column {tok.location.column} instead.)",
                 tok.location,
             )
         return self._advance()
 
-    def _skip_newlines(self):
+    def _skip_newlines(self) -> None:
         while self._check(TokenType.NEWLINE):
             self._advance()
 
-    def _error(self, message):
+    def _error(self, message: str) -> ParseError:
         tok = self._peek()
         return ParseError(
-            f"{message} (line {tok.location.line}, column {tok.location.column}, near '{tok.value}')",
+            f"{message} (line {tok.location.line}, column {tok.location.column}, "
+            f"near '{tok.value}')",
             tok.location,
         )
 
-    def parse(self):
-        statements = []
+    # ---------- top-level ----------
+
+    def parse(self) -> Program:
+        statements: List[Statement] = []
         self._skip_newlines()
         while not self._at_end():
             stmt = self._parse_statement()
             if stmt is not None:
                 statements.append(stmt)
             self._skip_newlines()
-        return Program(statements=statements, location=SourceLocation(1, 1, self.name))
+        return Program(statements=statements,
+                       location=SourceLocation(1, 1, self.name))
 
-    def _parse_statement(self):
+    # ---------- statements ----------
+
+    def _parse_statement(self) -> Optional[Statement]:
         tok = self._peek()
-        if tok.type == TokenType.LET: return self._parse_let()
-        if tok.type == TokenType.SAY: return self._parse_say()
-        if tok.type == TokenType.IF: return self._parse_if()
-        if tok.type == TokenType.WHILE: return self._parse_while()
-        if tok.type == TokenType.REPEAT: return self._parse_repeat()
-        if tok.type == TokenType.FOR: return self._parse_for()
-        if tok.type == TokenType.TO: return self._parse_function_def()
-        if tok.type == TokenType.RETURN: return self._parse_return()
-        if tok.type == TokenType.MOVE: return self._parse_move()
-        if tok.type == TokenType.MAKE: return self._parse_make()
-        if tok.type == TokenType.SET: return self._parse_set()
+        if tok.type == TokenType.LET:
+            return self._parse_let()
+        if tok.type == TokenType.SAY:
+            return self._parse_say()
+        if tok.type == TokenType.IF:
+            return self._parse_if()
+        if tok.type == TokenType.WHILE:
+            return self._parse_while()
+        if tok.type == TokenType.REPEAT:
+            return self._parse_repeat()
+        if tok.type == TokenType.FOR:
+            return self._parse_for()
+        if tok.type == TokenType.TO:
+            return self._parse_function_def()
+        if tok.type == TokenType.RETURN:
+            return self._parse_return()
+        if tok.type == TokenType.MOVE:
+            return self._parse_move()
+        if tok.type == TokenType.MAKE:
+            return self._parse_make()
+        if tok.type == TokenType.SET:
+            return self._parse_set()
+
+        # Bare expression statement (e.g. a function call).
         expr = self._parse_expression()
-        if expr is None: return None
+        if expr is None:
+            return None
         return ExpressionStatement(expression=expr, location=expr.location)
 
-    def _parse_let(self):
-        let_tok = self._advance()
+    def _parse_let(self) -> LetStatement:
+        let_tok = self._advance()  # LET
         name_tok = self._expect(TokenType.IDENT, "After 'let' I expected a name for the variable")
         self._expect(TokenType.BE, "After the variable name I expected 'be'")
         value = self._parse_expression()
-        if value is None: raise self._error("After 'be' I expected a value for the variable")
-        return LetStatement(name=name_tok.value, value=value, location=let_tok.location)
+        if value is None:
+            raise self._error("After 'be' I expected a value for the variable")
+        return LetStatement(
+            name=name_tok.value,
+            value=value,
+            location=let_tok.location,
+        )
 
-    def _parse_say(self):
-        say_tok = self._advance()
+    def _parse_say(self) -> SayStatement:
+        say_tok = self._advance()  # SAY
+        # say takes one expression (which can contain commas for concat)
         expr = self._parse_expression()
-        if expr is None: raise self._error("After 'say' I expected something to say")
+        if expr is None:
+            raise self._error("After 'say' I expected something to say")
         return SayStatement(parts=[expr], location=say_tok.location)
 
-    def _parse_if(self):
-        if_tok = self._advance()
+    def _parse_if(self) -> IfStatement:
+        if_tok = self._advance()  # IF
         condition = self._parse_expression()
-        if condition is None: raise self._error("After 'if' I expected a condition")
+        if condition is None:
+            raise self._error("After 'if' I expected a condition")
+        # `then` is optional and may appear on the same line or a later one.
         self._skip_newlines()
         if self._check(TokenType.THEN):
             self._advance()
             self._skip_newlines()
         then_branch = self._parse_block(_BLOCK_END)
-        else_branch = None
-        consumed_end = False
+        else_branch: Optional[List[Statement]] = None
+        consumed_end = False  # set if the else was an "else if" form
         if self._check(TokenType.ELSE):
-            self._advance()
+            self._advance()  # ELSE
             if self._check(TokenType.IF):
+                # "else if" form: the inner if consumes its own 'end', so
+                # the outer if does NOT need another one. The chain can
+                # keep going via further "else if"s, all sharing a single 'end'.
                 else_branch = [self._parse_if()]
                 consumed_end = True
             else:
@@ -720,21 +1044,32 @@ class Parser:
                 else_branch = self._parse_block(_BLOCK_END)
         if not consumed_end:
             self._expect(TokenType.END, "I was looking for 'end' to finish the if")
-        return IfStatement(condition=condition, then_branch=then_branch, else_branch=else_branch, location=if_tok.location)
+        return IfStatement(
+            condition=condition,
+            then_branch=then_branch,
+            else_branch=else_branch,
+            location=if_tok.location,
+        )
 
-    def _parse_while(self):
-        w_tok = self._advance()
+    def _parse_while(self) -> WhileStatement:
+        w_tok = self._advance()  # WHILE
         condition = self._parse_expression()
-        if condition is None: raise self._error("After 'while' I expected a condition")
+        if condition is None:
+            raise self._error("After 'while' I expected a condition")
         self._skip_newlines()
         body = self._parse_block(_BLOCK_END)
         self._expect(TokenType.END, "I was looking for 'end' to finish the while loop")
         return WhileStatement(condition=condition, body=body, location=w_tok.location)
 
-    def _parse_repeat(self):
-        r_tok = self._advance()
+    def _parse_repeat(self) -> RepeatStatement:
+        r_tok = self._advance()  # REPEAT
+        # Use _parse_primary (not _parse_expression) so that the word 'times'
+        # is NOT consumed as the multiplication operator. If you need arithmetic,
+        # wrap it in parens: `repeat (5 plus 3) times`.
         count = self._parse_primary()
-        if count is None: raise self._error("After 'repeat' I expected a number")
+        if count is None:
+            raise self._error("After 'repeat' I expected a number")
+        # Allow `times` on the same line OR the next non-empty line.
         self._skip_newlines()
         self._expect(TokenType.TIMES, "After the number I expected 'times'")
         self._skip_newlines()
@@ -742,157 +1077,212 @@ class Parser:
         self._expect(TokenType.END, "I was looking for 'end' to finish the repeat loop")
         return RepeatStatement(count=count, body=body, location=r_tok.location)
 
-    def _parse_for(self):
-        f_tok = self._advance()
+    def _parse_for(self) -> ForEachStatement:
+        f_tok = self._advance()  # FOR
         self._expect(TokenType.EACH, "After 'for' I expected 'each'")
         var_tok = self._expect(TokenType.IDENT, "After 'for each' I expected a variable name")
         self._expect(TokenType.IN, "After the variable name I expected 'in'")
+        # Use _parse_or (not _parse_expression) so commas inside list literals
+        # work correctly: `for each x in [1, 2, 3]`.
         iterable = self._parse_or()
-        if iterable is None: raise self._error("After 'in' I expected something to loop over")
+        if iterable is None:
+            raise self._error("After 'in' I expected something to loop over")
         self._skip_newlines()
         body = self._parse_block(_BLOCK_END)
         self._expect(TokenType.END, "I was looking for 'end' to finish the for loop")
-        return ForEachStatement(var_name=var_tok.value, iterable=iterable, body=body, location=f_tok.location)
+        return ForEachStatement(
+            var_name=var_tok.value,
+            iterable=iterable,
+            body=body,
+            location=f_tok.location,
+        )
 
-    def _parse_function_def(self):
-        to_tok = self._advance()
+    def _parse_function_def(self) -> FunctionDef:
+        to_tok = self._advance()  # TO
         name_tok = self._expect(TokenType.IDENT, "After 'to' I expected a function name")
-        params = []
+        params: List[str] = []
+        # Parameters are identifiers, until we hit a newline.
         while self._peek().type == TokenType.IDENT:
             params.append(self._advance().value)
         if not params:
-            raise self._error(f"The function '{name_tok.value}' has no parameters. Functions need at least one name between 'to' and the body.")
+            raise self._error(
+                f"The function '{name_tok.value}' has no parameters. "
+                f"Functions need at least one name between 'to' and the body."
+            )
         self._skip_newlines()
         body = self._parse_block(_BLOCK_END)
         self._expect(TokenType.END, "I was looking for 'end' to finish the function")
-        return FunctionDef(name=name_tok.value, params=params, body=body, location=to_tok.location)
+        return FunctionDef(
+            name=name_tok.value,
+            params=params,
+            body=body,
+            location=to_tok.location,
+        )
 
-    def _parse_return(self):
-        r_tok = self._advance()
-        if (self._peek().type in _BLOCK_END or self._peek().type == TokenType.NEWLINE or self._peek().type in _STMT_START):
+    def _parse_return(self) -> ReturnStatement:
+        r_tok = self._advance()  # RETURN
+        # Return may have an expression or not (just `return` for nothing).
+        if (self._peek().type in _BLOCK_END
+                or self._peek().type == TokenType.NEWLINE
+                or self._peek().type in _STMT_START):
             return ReturnStatement(value=None, location=r_tok.location)
         value = self._parse_expression()
         return ReturnStatement(value=value, location=r_tok.location)
 
-    def _parse_block(self, end_tokens):
-        stmts = []
+    def _parse_block(self, end_tokens: Set[TokenType]) -> List[Statement]:
+        """Parse statements until we hit a token in end_tokens or EOF."""
+        stmts: List[Statement] = []
         while not self._at_end() and self._peek().type not in end_tokens:
             stmt = self._parse_statement()
-            if stmt is not None: stmts.append(stmt)
+            if stmt is not None:
+                stmts.append(stmt)
             self._skip_newlines()
         return stmts
 
-    def _parse_expression(self):
+    # ---------- expressions (precedence climbing) ----------
+
+    def _parse_expression(self) -> Optional[object]:
+        """Top of the expression chain. Comma is the lowest operator."""
         left = self._parse_or()
-        if left is None: return None
+        if left is None:
+            return None
         if self._check(TokenType.COMMA):
             parts = [left]
             while self._check(TokenType.COMMA):
                 self._advance()
                 nxt = self._parse_or()
-                if nxt is None: raise self._error("After ',' I expected another value")
+                if nxt is None:
+                    raise self._error("After ',' I expected another value")
                 parts.append(nxt)
             return ConcatExpression(parts=parts, location=left.location)
         return left
 
-    def _parse_or(self):
+    def _parse_or(self) -> Optional[object]:
         left = self._parse_and()
         while left is not None and self._check(TokenType.OR):
             self._advance()
             right = self._parse_and()
-            if right is None: raise self._error("After 'or' I expected a value")
-            left = BinaryOp(op="or", left=left, right=right, location=left.location)
+            if right is None:
+                raise self._error("After 'or' I expected a value")
+            left = BinaryOp(op="or", left=left, right=right,
+                            location=left.location)
         return left
 
-    def _parse_and(self):
+    def _parse_and(self) -> Optional[object]:
         left = self._parse_unary_logic()
         while left is not None and self._check(TokenType.AND):
             self._advance()
             right = self._parse_unary_logic()
-            if right is None: raise self._error("After 'and' I expected a value")
-            left = BinaryOp(op="and", left=left, right=right, location=left.location)
+            if right is None:
+                raise self._error("After 'and' I expected a value")
+            left = BinaryOp(op="and", left=left, right=right,
+                            location=left.location)
         return left
 
-    def _parse_unary_logic(self):
+    def _parse_unary_logic(self) -> Optional[object]:
         if self._check(TokenType.NOT):
             op_tok = self._advance()
             operand = self._parse_unary_logic()
-            if operand is None: raise self._error("After 'not' I expected a value")
+            if operand is None:
+                raise self._error("After 'not' I expected a value")
             return UnaryOp(op="not", operand=operand, location=op_tok.location)
         return self._parse_comparison()
 
-    def _parse_comparison(self):
+    def _parse_comparison(self) -> Optional[object]:
         left = self._parse_additive()
-        if left is None: return None
+        if left is None:
+            return None
         comp_map = {
-            TokenType.IS: "is", TokenType.IS_NOT_EQUAL: "is not equal to",
-            TokenType.IS_GREATER: "is greater than", TokenType.IS_LESS: "is less than",
+            TokenType.IS: "is",
+            TokenType.IS_NOT_EQUAL: "is not equal to",
+            TokenType.IS_GREATER: "is greater than",
+            TokenType.IS_LESS: "is less than",
             TokenType.IS_GREATER_EQ: "is greater than or equal to",
             TokenType.IS_LESS_EQ: "is less than or equal to",
         }
         if self._peek().type in comp_map:
             op_tok = self._advance()
             right = self._parse_additive()
-            if right is None: raise self._error(f"After '{op_tok.value}' I expected a value to compare with")
-            return BinaryOp(op=comp_map[op_tok.type], left=left, right=right, location=op_tok.location)
+            if right is None:
+                raise self._error(
+                    f"After '{op_tok.value}' I expected a value to compare with"
+                )
+            return BinaryOp(op=comp_map[op_tok.type], left=left, right=right,
+                            location=op_tok.location)
         return left
 
-    def _parse_additive(self):
+    def _parse_additive(self) -> Optional[object]:
         left = self._parse_multiplicative()
         while left is not None and self._peek().type in (TokenType.PLUS, TokenType.MINUS):
             op_tok = self._advance()
             right = self._parse_multiplicative()
-            if right is None: raise self._error(f"After '{op_tok.value}' I expected a value")
+            if right is None:
+                raise self._error(f"After '{op_tok.value}' I expected a value")
             op = "plus" if op_tok.type == TokenType.PLUS else "minus"
-            left = BinaryOp(op=op, left=left, right=right, location=left.location)
+            left = BinaryOp(op=op, left=left, right=right,
+                            location=left.location)
         return left
 
-    def _parse_multiplicative(self):
+    def _parse_multiplicative(self) -> Optional[object]:
         left = self._parse_unary()
-        while left is not None and self._peek().type in (TokenType.TIMES, TokenType.DIVIDED, TokenType.MOD):
+        while left is not None and self._peek().type in (
+                TokenType.TIMES, TokenType.STAR, TokenType.DIVIDED,
+                TokenType.SLASH, TokenType.MOD):
             op_tok = self._advance()
             right = self._parse_unary()
-            if right is None: raise self._error(f"After '{op_tok.value}' I expected a value")
-            if op_tok.type == TokenType.TIMES: op = "times"
-            elif op_tok.type == TokenType.DIVIDED: op = "divided by"
-            else: op = "mod"
-            left = BinaryOp(op=op, left=left, right=right, location=left.location)
+            if right is None:
+                raise self._error(f"After '{op_tok.value}' I expected a value")
+            if op_tok.type in (TokenType.TIMES, TokenType.STAR):
+                op = "times"
+            elif op_tok.type in (TokenType.DIVIDED, TokenType.SLASH):
+                op = "divided by"
+            else:
+                op = "mod"
+            left = BinaryOp(op=op, left=left, right=right,
+                            location=left.location)
         return left
 
-    def _parse_unary(self):
+    def _parse_unary(self) -> Optional[object]:
+        # Unary minus (only when MINUS isn't already part of a negative number,
+        # which the lexer handled; here we handle bare MINUS like `-x`).
         if self._check(TokenType.MINUS):
             op_tok = self._advance()
             operand = self._parse_unary()
-            if operand is None: raise self._error("After '-' I expected a value")
+            if operand is None:
+                raise self._error("After '-' I expected a value")
             return UnaryOp(op="minus", operand=operand, location=op_tok.location)
         return self._parse_postfix()
 
-    def _parse_postfix(self):
+    def _parse_postfix(self) -> Optional[object]:
         expr = self._parse_size_of_or_primary()
         while expr is not None and self._check(TokenType.AT):
             self._advance()
             index = self._parse_unary()
-            if index is None: raise self._error("After 'at' I expected an index value")
+            if index is None:
+                raise self._error("After 'at' I expected an index value")
             expr = IndexExpression(collection=expr, index=index, location=expr.location)
         if expr is not None and self._check(TokenType.WITH):
             self._advance()
             value = self._parse_unary()
-            if value is None: raise self._error("After 'with' I expected a value to add")
+            if value is None:
+                raise self._error("After 'with' I expected a value to add")
             self._expect(TokenType.ADDED, "After the value I expected 'added'")
             expr = WithAddedExpression(collection=expr, value=value, location=expr.location)
         return expr
 
-    def _parse_size_of_or_primary(self):
+    def _parse_size_of_or_primary(self) -> Optional[object]:
         if self._check(TokenType.SIZE):
             op_tok = self._advance()
             self._expect(TokenType.OF, "After 'size' I expected 'of'")
-            operand = self._parse_size_of_or_primary()
-            if operand is None: raise self._error("After 'size of' I expected a value")
+            operand = self._parse_size_of_or_primary()  # right-associative
+            if operand is None:
+                raise self._error("After 'size of' I expected a value")
             return SizeExpression(collection=operand, location=op_tok.location)
         return self._parse_primary()
 
-    def _parse_primary(self):
+    def _parse_primary(self) -> Optional[object]:
         tok = self._peek()
+
         if tok.type == TokenType.NUMBER:
             self._advance()
             return NumberLiteral(value=tok.value, location=tok.location)
@@ -914,7 +1304,8 @@ class Parser:
         if tok.type == TokenType.LPAREN:
             self._advance()
             expr = self._parse_expression()
-            if expr is None: raise self._error("Inside '(' I expected a value")
+            if expr is None:
+                raise self._error("Inside '(' I expected a value")
             self._expect(TokenType.RPAREN, "I was looking for ')'")
             return expr
         if tok.type == TokenType.LBRACKET:
@@ -923,357 +1314,514 @@ class Parser:
             return self._parse_ident_or_call()
         if tok.type == TokenType.ASK:
             return self._parse_ask()
+
         return None
 
-    def _parse_ask(self):
-        ask_tok = self._advance()
+    def _parse_ask(self) -> object:
+        ask_tok = self._advance()  # ASK
         prompt = self._parse_expression()
-        if prompt is None: raise self._error("After 'ask' I expected a prompt string")
+        if prompt is None:
+            raise self._error("After 'ask' I expected a prompt string")
         return CallExpression(callee="ask", arguments=[prompt], location=ask_tok.location)
 
-    def _parse_ident_or_call(self):
-        name_tok = self._advance()
+    def _parse_ident_or_call(self) -> object:
+        name_tok = self._advance()  # IDENT
+        # Look ahead: if the next token starts an expression, this is a call.
         if self._peek().type in _EXPR_START:
-            args = [self._parse_call_arg()]
+            # Function call args are SINGLE VALUES (possibly with postfix).
+            # Use a restricted parser so the call doesn't greedily eat operators
+            # that belong to the surrounding expression. For complex args,
+            # wrap them in parens: `add (3 plus 4), 5`.
+            args: List[object] = [self._parse_call_arg()]
             while self._check(TokenType.COMMA):
                 self._advance()
                 nxt = self._parse_call_arg()
-                if nxt is None: raise self._error("After ',' in a function call I expected a value")
+                if nxt is None:
+                    raise self._error("After ',' in a function call I expected a value")
                 args.append(nxt)
-            return CallExpression(callee=name_tok.value, arguments=args, location=name_tok.location)
+            return CallExpression(callee=name_tok.value, arguments=args,
+                                  location=name_tok.location)
         return Identifier(name=name_tok.value, location=name_tok.location)
 
-    def _parse_call_arg(self):
+    def _parse_call_arg(self) -> Optional[object]:
+        """Parse a single function-call argument.
+
+        A call arg is a primary (literal, identifier, parenthesized expr,
+        list literal) possibly followed by postfix `at` / `with ... added`.
+        It does NOT include binary operators, comparisons, or boolean logic —
+        those belong to the surrounding expression. Use parens for complex args.
+        """
         expr = self._parse_primary()
-        if expr is None: return None
+        if expr is None:
+            return None
+        # Postfix `at`
         while self._check(TokenType.AT):
             self._advance()
-            index = self._parse_call_arg()
-            if index is None: raise self._error("After 'at' I expected an index value")
+            index = self._parse_call_arg()  # index is also a single value
+            if index is None:
+                raise self._error("After 'at' I expected an index value")
             expr = IndexExpression(collection=expr, index=index, location=expr.location)
+        # Postfix `with ... added`
         if self._check(TokenType.WITH):
             self._advance()
             value = self._parse_call_arg()
-            if value is None: raise self._error("After 'with' I expected a value to add")
+            if value is None:
+                raise self._error("After 'with' I expected a value to add")
             self._expect(TokenType.ADDED, "After the value I expected 'added'")
             expr = WithAddedExpression(collection=expr, value=value, location=expr.location)
         return expr
 
-    def _parse_list_literal(self):
-        lb_tok = self._advance()
-        elements = []
-        self._skip_newlines()
+    def _parse_list_literal(self) -> object:
+        lb_tok = self._advance()  # [
+        elements: List[object] = []
+        self._skip_newlines()  # allow multi-line lists
         if not self._check(TokenType.RBRACKET):
+            # Use _parse_or so commas SEPARATE elements (not build concat).
             first = self._parse_or()
-            if first is None: raise self._error("Inside '[' I expected a value")
+            if first is None:
+                raise self._error("Inside '[' I expected a value")
             elements.append(first)
             while self._check(TokenType.COMMA):
                 self._advance()
                 self._skip_newlines()
-                if self._check(TokenType.RBRACKET): break
+                if self._check(TokenType.RBRACKET):
+                    break  # trailing comma is OK
                 nxt = self._parse_or()
-                if nxt is None: raise self._error("Inside '[' I expected a value after ','")
+                if nxt is None:
+                    raise self._error("Inside '[' I expected a value after ','")
                 elements.append(nxt)
         self._skip_newlines()
         self._expect(TokenType.RBRACKET, "I was looking for ']' to close the list")
         return ListLiteral(elements=elements, location=lb_tok.location)
 
-    def _expect_ident(self, message):
+    # ---------- turtle statements ----------
+
+    def _expect_ident(self, message: str) -> str:
         tok = self._peek()
         if tok.type != TokenType.IDENT:
             raise self._error(message)
         self._advance()
         return str(tok.value)
 
-    def _parse_move(self):
-        move_tok = self._advance()
+    def _parse_move(self) -> MoveStatement:
+        """`move ada forward 50` / `move ada right 20` / etc."""
+        move_tok = self._advance()  # MOVE
         name = self._expect_ident("After 'move' I expected a turtle's name")
         dir_tok = self._peek()
-        direction = None
+        direction: Optional[str] = None
         if dir_tok.type == TokenType.IDENT:
             word = str(dir_tok.value).lower()
             if word in ("forward", "backward", "left", "right"):
                 direction = word
                 self._advance()
         if direction is None:
-            raise self._error("After 'move <turtle>' I expected 'forward', 'backward', 'left', or 'right'")
+            raise self._error(
+                "After 'move <turtle>' I expected 'forward', 'backward', "
+                "'left', or 'right'"
+            )
         amount = self._parse_expression()
-        if amount is None: raise self._error(f"After 'move <turtle> {direction}' I expected a number")
-        return MoveStatement(turtle_name=name, direction=direction, amount=amount, location=move_tok.location)
+        if amount is None:
+            raise self._error(f"After 'move <turtle> {direction}' I expected a number")
+        return MoveStatement(
+            turtle_name=name, direction=direction, amount=amount,
+            location=move_tok.location,
+        )
 
-    def _parse_make(self):
-        make_tok = self._advance()
+    def _parse_make(self) -> Statement:
+        """`make ada <action>` — many forms, see docs/turtle.md."""
+        make_tok = self._advance()  # MAKE
         name = self._expect_ident("After 'make' I expected a turtle's name")
+
+        # `make ada goto 50 right and 20 up`
         if self._check(TokenType.GOTO):
             return self._parse_make_goto_relative(make_tok, name)
+
+        # Everything else starts with an IDENT. Look at it to dispatch.
         nxt = self._peek()
         if nxt.type != TokenType.IDENT:
-            raise self._error(f"After 'make {name}' I expected an action")
+            raise self._error(
+                f"After 'make {name}' I expected an action "
+                f"(hide, show, close, open, erase, restart, home, draw, speed, go, goto)"
+            )
         word = str(nxt.value).lower()
-        self._advance()
-        if word == "go" and self._check(TokenType.IDENT) and str(self._peek().value).lower() == "home":
+        self._advance()  # consume the action word
+
+        # `make ada go home`
+        if word == "go" and self._check(TokenType.IDENT) and \
+                str(self._peek().value).lower() == "home":
             self._advance()
-            return MakeStatement(turtle_name=name, action="home", arg=None, location=make_tok.location)
+            return MakeStatement(
+                turtle_name=name, action="home", arg=None,
+                location=make_tok.location,
+            )
+
+        # `make ada go to X and Y`
         if word == "go" and self._check(TokenType.TO):
-            self._advance()
+            self._advance()  # consume 'to'
+            # Use _parse_additive (not _parse_expression) so the `and` between
+            # the two coordinates is not greedily consumed as logical AND.
             x = self._parse_additive()
-            if x is None: raise self._error("After 'make X go to' I expected a number for x")
+            if x is None:
+                raise self._error("After 'make X go to' I expected a number for x")
             self._expect(TokenType.AND, "After the x value I expected 'and'")
             y = self._parse_additive()
-            if y is None: raise self._error("After 'and' I expected a number for y")
-            return MakeStatement(turtle_name=name, action="go_to", arg=ListLiteral(elements=[x, y], location=x.location), location=make_tok.location)
-        if word == "close" and self._check(TokenType.IDENT) and str(self._peek().value).lower() == "pen":
+            if y is None:
+                raise self._error("After 'and' I expected a number for y")
+            return MakeStatement(
+                turtle_name=name, action="go_to",
+                arg=ListLiteral(elements=[x, y], location=x.location),
+                location=make_tok.location,
+            )
+
+        # `make ada close pen` / `make ada open pen`
+        if word == "close" and self._check(TokenType.IDENT) and \
+                str(self._peek().value).lower() == "pen":
             self._advance()
-            return MakeStatement(turtle_name=name, action="pen_up", arg=None, location=make_tok.location)
-        if word == "open" and self._check(TokenType.IDENT) and str(self._peek().value).lower() == "pen":
+            return MakeStatement(
+                turtle_name=name, action="pen_up", arg=None,
+                location=make_tok.location,
+            )
+        if word == "open" and self._check(TokenType.IDENT) and \
+                str(self._peek().value).lower() == "pen":
             self._advance()
-            return MakeStatement(turtle_name=name, action="pen_down", arg=None, location=make_tok.location)
-        if word == "erase" and self._check(TokenType.IDENT) and str(self._peek().value).lower() == "all":
+            return MakeStatement(
+                turtle_name=name, action="pen_down", arg=None,
+                location=make_tok.location,
+            )
+
+        # `make ada erase all`
+        if word == "erase" and self._check(TokenType.IDENT) and \
+                str(self._peek().value).lower() == "all":
             self._advance()
-            return MakeStatement(turtle_name=name, action="erase_all", arg=None, location=make_tok.location)
+            return MakeStatement(
+                turtle_name=name, action="erase_all", arg=None,
+                location=make_tok.location,
+            )
+
+        # `make ada draw circle 50` / `make ada draw dot 5`
         if word == "draw":
             shape_tok = self._peek()
             if shape_tok.type != TokenType.IDENT:
-                raise self._error("After 'make X draw' I expected 'circle' or 'dot'")
+                raise self._error(
+                    "After 'make X draw' I expected 'circle' or 'dot'"
+                )
             shape = str(shape_tok.value).lower()
             if shape not in ("circle", "dot"):
-                raise self._error(f"I don't know how to draw a '{shape}'. Try 'circle' or 'dot'.")
+                raise self._error(
+                    f"I don't know how to draw a '{shape}'. "
+                    f"Try 'circle' or 'dot'."
+                )
             self._advance()
             arg = self._parse_expression()
-            if arg is None: raise self._error(f"After 'make X draw {shape}' I expected a number for the size")
-            return MakeStatement(turtle_name=name, action=f"draw_{shape}", arg=arg, location=make_tok.location)
+            if arg is None:
+                raise self._error(
+                    f"After 'make X draw {shape}' I expected a number for the size"
+                )
+            return MakeStatement(
+                turtle_name=name, action=f"draw_{shape}", arg=arg,
+                location=make_tok.location,
+            )
+
+        # No-arg actions
         if word in ("hide", "show", "restart"):
-            return MakeStatement(turtle_name=name, action=word, arg=None, location=make_tok.location)
+            return MakeStatement(
+                turtle_name=name, action=word, arg=None,
+                location=make_tok.location,
+            )
+
+        # `make ada speed 5`
         if word == "speed":
             arg = self._parse_expression()
-            if arg is None: raise self._error("After 'make X speed' I expected a number from 0 to 10")
-            return MakeStatement(turtle_name=name, action="speed", arg=arg, location=make_tok.location)
-        raise self._error(f"I don't know the action '{word}' for a turtle.")
+            if arg is None:
+                raise self._error("After 'make X speed' I expected a number from 0 to 10")
+            return MakeStatement(
+                turtle_name=name, action="speed", arg=arg,
+                location=make_tok.location,
+            )
 
-    def _parse_make_goto_relative(self, make_tok, name):
-        self._advance()
+        raise self._error(
+            f"I don't know the action '{word}' for a turtle. "
+            f"Try: hide, show, close pen, open pen, erase all, restart, "
+            f"go home, go to X and Y, draw circle, draw dot, speed, or goto."
+        )
+
+    def _parse_make_goto_relative(self, make_tok, name: str) -> GotoStatement:
+        """`make ada goto 50 right and 20 up`"""
+        self._advance()  # consume GOTO
+        # Use _parse_additive (not _parse_expression) so the `and` between
+        # the two coordinates is not greedily consumed as a logical AND.
         x_amount = self._parse_additive()
-        if x_amount is None: raise self._error("After 'goto' I expected a number for the x amount")
+        if x_amount is None:
+            raise self._error("After 'goto' I expected a number for the x amount")
         x_dir_tok = self._peek()
-        if x_dir_tok.type != TokenType.IDENT or str(x_dir_tok.value).lower() not in ("right", "left"):
-            raise self._error("After the x amount I expected 'right' or 'left'")
+        if x_dir_tok.type != TokenType.IDENT or \
+                str(x_dir_tok.value).lower() not in ("right", "left"):
+            raise self._error(
+                "After the x amount I expected 'right' or 'left'"
+            )
         x_dir = str(x_dir_tok.value).lower()
         self._advance()
         self._expect(TokenType.AND, "After the x direction I expected 'and'")
         y_amount = self._parse_additive()
-        if y_amount is None: raise self._error("After 'and' I expected a number for the y amount")
+        if y_amount is None:
+            raise self._error("After 'and' I expected a number for the y amount")
         y_dir_tok = self._peek()
-        if y_dir_tok.type != TokenType.IDENT or str(y_dir_tok.value).lower() not in ("up", "down"):
-            raise self._error("After the y amount I expected 'up' or 'down'")
+        if y_dir_tok.type != TokenType.IDENT or \
+                str(y_dir_tok.value).lower() not in ("up", "down"):
+            raise self._error(
+                "After the y amount I expected 'up' or 'down'"
+            )
         y_dir = str(y_dir_tok.value).lower()
         self._advance()
-        return GotoStatement(turtle_name=name, x_amount=x_amount, x_dir=x_dir, y_amount=y_amount, y_dir=y_dir, location=make_tok.location)
+        return GotoStatement(
+            turtle_name=name,
+            x_amount=x_amount, x_dir=x_dir,
+            y_amount=y_amount, y_dir=y_dir,
+            location=make_tok.location,
+        )
 
-    def _parse_set(self):
-        set_tok = self._advance()
+    def _parse_set(self) -> SetStatement:
+        """`set ada pen color to 'red'` / `set ada background to 'white'` / etc."""
+        set_tok = self._advance()  # SET
         name = self._expect_ident("After 'set' I expected a turtle's name")
+        # Look for `pen color`, `pen size`, or any other single-word property.
         property_name = self._parse_set_property(name)
-        self._expect(TokenType.TO, "After the property name I expected 'to'")
+        self._expect(TokenType.TO, f"After the property name I expected 'to'")
         value = self._parse_expression()
-        if value is None: raise self._error(f"After 'set {name} {property_name} to' I expected a value")
-        return SetStatement(turtle_name=name, property=property_name, value=value, location=set_tok.location)
+        if value is None:
+            raise self._error(
+                f"After 'set {name} {property_name} to' I expected a value"
+            )
+        return SetStatement(
+            turtle_name=name, property=property_name, value=value,
+            location=set_tok.location,
+        )
 
-    def _parse_set_property(self, turtle_name):
+    def _parse_set_property(self, turtle_name: str) -> str:
+        """Read the property name after `set <turtle>`.
+
+        Supports `pen color`, `pen size`, or any other single-word property
+        like `background`. The second word after `pen` may be a regular
+        identifier or the `size` keyword (used in `size of X`).
+        """
         first = self._peek()
         if first.type != TokenType.IDENT:
-            raise self._error(f"After 'set {turtle_name}' I expected a property name")
+            raise self._error(
+                f"After 'set {turtle_name}' I expected a property name "
+                f"(like 'pen color', 'pen size', or 'background')"
+            )
         word = str(first.value).lower()
         if word == "pen":
             self._advance()
             second = self._peek()
+            # The second word may be an IDENT or a keyword (e.g. SIZE).
+            # Match on the textual value, not the token type.
             second_text = str(second.value).lower() if second.value is not None else ""
             if second_text not in ("color", "size"):
-                raise self._error(f"After 'set {turtle_name} pen' I expected 'color' or 'size'")
+                raise self._error(
+                    f"After 'set {turtle_name} pen' I expected 'color' or 'size'"
+                )
             self._advance()
             return f"pen {second_text}"
         self._advance()
         return word
 
-# --- src.interpreter ---
-import math
-import random as _random
 
-def _typename(v):
-    if isinstance(v, bool): return "true/false"
-    if isinstance(v, (int, float)): return "number"
-    if isinstance(v, str): return "text"
-    if isinstance(v, list): return "list"
-    if v is None: return "nothing"
+# --- src/environment.py ---
+"""Scoped environment (variable + function storage) for the interpreter.
+
+Implemented in Phase 5.
+"""
+
+from __future__ import annotations
+from typing import Any, Optional, Callable, List, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    
+
+class Environment:
+    def __init__(self, parent: Optional["Environment"] = None):
+        self.parent = parent
+        self.variables: dict = {}
+        self.functions: dict = {}
+
+    def define(self, name: str, value: Any) -> None:
+        self.variables[name] = value
+
+    def get(self, name: str) -> Any:
+        env = self
+        while env is not None:
+            if name in env.variables:
+                return env.variables[name]
+            env = env.parent
+        raise KeyError(name)
+
+    def set(self, name: str, value: Any) -> None:
+        env = self
+        while env is not None:
+            if name in env.variables:
+                env.variables[name] = value
+                return
+            env = env.parent
+        raise KeyError(name)
+
+    def has(self, name: str) -> bool:
+        env = self
+        while env is not None:
+            if name in env.variables:
+                return True
+            env = env.parent
+        return False
+
+    def define_function(self, name: str, func: "FunctionDef") -> None:
+        self.functions[name] = func
+
+    def get_function(self, name: str) -> Optional["FunctionDef"]:
+        env = self
+        while env is not None:
+            if name in env.functions:
+                return env.functions[name]
+            env = env.parent
+        return None
+
+    def child(self) -> "Environment":
+        return Environment(parent=self)
+
+
+# --- src/interpreter.py ---
+"""Interpreter for the E language.
+
+Walks the AST produced by the parser and actually runs the program.
+"""
+
+from __future__ import annotations
+from typing import List, Optional, Callable, Any
+
+    Program, Statement, LetStatement, SayStatement, IfStatement,
+    WhileStatement, RepeatStatement, ForEachStatement, FunctionDef,
+    ReturnStatement, ExpressionStatement,
+    NumberLiteral, StringLiteral, BoolLiteral, NothingLiteral, Identifier,
+    ListLiteral, ConcatExpression, BinaryOp, UnaryOp, CallExpression,
+    IndexExpression, SizeExpression, WithAddedExpression,
+    TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
+)
+
+
+# Internal control-flow signals. These are caught by the interpreter
+# at function boundaries.
+class _ReturnSignal(Exception):
+    def __init__(self, value):
+        self.value = value
+
+
+class _BreakSignal(Exception):
+    pass
+
+
+class _ContinueSignal(Exception):
+    pass
+
+
+# Sentinel returned by TurtleLiteral evaluation. _exec_let looks for this
+# to know it should create a fresh turtle bound to the let-name.
+class _turtle_factory_marker:
+    """Singleton sentinel: tells `_exec_let` to create a new turtle."""
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self):
+        return "<turtle-factory>"
+
+
+# Type name helpers for friendly error messages.
+def _typename(v: Any) -> str:
+    if isinstance(v, bool):
+        return "true/false"
+    if isinstance(v, (int, float)):
+        return "number"
+    if isinstance(v, str):
+        return "text"
+    if isinstance(v, list):
+        return "list"
+    if v is None:
+        return "nothing"
     return type(v).__name__
 
-def _to_text(v):
-    if v is None: return "nothing"
-    if isinstance(v, bool): return "true" if v else "false"
-    if isinstance(v, list): return "[" + ", ".join(_to_text(x) for x in v) + "]"
+
+def _to_text(v: Any) -> str:
+    """Convert any E value to a readable text form (for `,` concat and `say`)."""
+    if v is None:
+        return "nothing"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, list):
+        return "[" + ", ".join(_to_text(x) for x in v) + "]"
     return str(v)
 
-def _to_number(v):
+
+def _to_number(v: Any) -> Any:
+    """Convert to a number if possible; raise a friendly error otherwise."""
     if isinstance(v, bool):
-        raise TypeError_(f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number.")
-    if isinstance(v, (int, float)): return v
+        raise TypeError_(
+            f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number."
+        )
+    if isinstance(v, (int, float)):
+        return v
     if isinstance(v, str):
         try:
             n = float(v)
-            if n.is_integer(): return int(n)
+            if n.is_integer():
+                return int(n)
             return n
         except ValueError:
-            raise TypeError_(f"I can't turn the text \"{v}\" into a number.")
-    raise TypeError_(f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number.")
+            raise TypeError_(
+                f"I can't turn the text \"{v}\" into a number."
+            )
+    raise TypeError_(
+        f"I can't do math with {_typename(v)} ({_to_text(v)}). Use a number."
+    )
 
-def _to_bool(v):
-    if v is None or v is False: return False
+
+def _to_bool(v: Any) -> bool:
+    """E's truthiness: false/nothing are false; everything else is true."""
+    if v is None or v is False:
+        return False
     return True
 
-class _ReturnSignal(Exception):
-    def __init__(self, value): self.value = value
 
-class _turtle_factory_marker:
-    _instance = None
-    def __new__(cls):
-        if cls._instance is None: cls._instance = super().__new__(cls)
-        return cls._instance
-    def __repr__(self): return "<turtle-factory>"
-
-# --- src.turtle_runtime (text mode only for web) ---
-class Turtle:
-    def __init__(self, name, mode="text"):
-        self.name = name
-        self.mode = "text"
-        self.log = []
-        self.x = 0.0
-        self.y = 0.0
-        self.heading = 0.0
-        self.pen_down = True
-        self.pen_color = "black"
-        self.pen_size = 1
-        self.background = "white"
-        self.visible = True
-        self.speed = 3
-
-    def _log(self, msg):
-        self.log.append(f">> {msg}")
-
-    def forward(self, n):
-        rad = math.radians(self.heading)
-        self.x += n * math.cos(rad)
-        self.y += n * math.sin(rad)
-        self._log(f"forward {n}")
-
-    def backward(self, n):
-        rad = math.radians(self.heading)
-        self.x -= n * math.cos(rad)
-        self.y -= n * math.sin(rad)
-        self._log(f"backward {n}")
-
-    def left(self, n):
-        self.heading = (self.heading + n) % 360
-        self._log(f"left {n}")
-
-    def right(self, n):
-        self.heading = (self.heading - n) % 360
-        self._log(f"right {n}")
-
-    def hide(self):
-        self.visible = False
-        self._log("hide")
-
-    def show(self):
-        self.visible = True
-        self._log("show")
-
-    def raise_pen(self):
-        self.pen_down = False
-        self._log("pen_up")
-
-    def lower_pen(self):
-        self.pen_down = True
-        self._log("pen_down")
-
-    def clear(self):
-        self.log.clear()
-        self._log("erase_all")
-
-    def home(self):
-        self.x = 0.0; self.y = 0.0; self.heading = 0.0
-        self._log("home")
-
-    def reset(self):
-        self.x = 0.0; self.y = 0.0; self.heading = 0.0
-        self.pen_down = True; self.pen_color = "black"; self.pen_size = 1
-        self.background = "white"; self.visible = True; self.speed = 3
-        self.log.clear()
-        self._log("restart")
-
-    def circle(self, r):
-        self._log(f"draw_circle {r}")
-
-    def dot(self, size):
-        self._log(f"draw_dot {size}")
-
-    def goto_relative(self, x_amount, x_dir, y_amount, y_dir):
-        dx = x_amount if x_dir == "right" else -x_amount
-        dy = y_amount if y_dir == "up" else -y_amount
-        self.x += dx; self.y += dy
-        self._log(f"goto {x_amount} {x_dir} and {y_amount} {y_dir}")
-
-    def goto_absolute(self, x, y):
-        self.x = x; self.y = y
-        self._log(f"go_to {x} and {y}")
-
-    def set_speed(self, n):
-        self.speed = max(0, min(10, int(n)))
-        self._log(f"speed {self.speed}")
-
-    def set_pen_color(self, color):
-        self.pen_color = str(color)
-        self._log(f"pen_color {self.pen_color}")
-
-    def set_pen_size(self, n):
-        self.pen_size = max(1, int(n))
-        self._log(f"pen_size {self.pen_size}")
-
-    def set_background(self, color):
-        self.background = str(color)
-        self._log(f"background {self.background}")
-
-class TurtleManager:
-    def __init__(self, requested_mode="text"):
-        self.turtles = {}
-
-    def create(self, name):
-        t = Turtle(name, "text")
-        self.turtles[name] = t
-        return t
-
-    def get(self, name):
-        if name not in self.turtles:
-            raise RuntimeError(f"I don't know a turtle called '{name}'.")
-        return self.turtles[name]
-
-# --- Interpreter ---
 class Interpreter:
-    def __init__(self, name="<source>", turtle_mode="text"):
+    def __init__(self, name: str = "<source>", turtle_mode: str = "auto"):
         self.name = name
         self.global_env = Environment()
-        self.output_buffer = []
+        self.output_buffer: List[str] = []
         self.turtles = TurtleManager(requested_mode=turtle_mode)
         self._install_builtins()
 
-    def run(self, program):
+    # ---------- public ----------
+
+    def run(self, program: Program) -> None:
+        """Execute a parsed program."""
         self._exec_stmts(program.statements, self.global_env)
 
-    def run_string(self, source):
-        toks = Lexer(source, "<repl>").tokenize()
+    def run_string(self, source: str) -> None:
+        """Lex, parse, and run a source string (used by the REPL)."""
+                        toks = Lexer(source, "<repl>").tokenize()
         prog = Parser(toks, "<repl>").parse()
         self.run(prog)
 
-    def _install_builtins(self):
-        self._builtins = {
+    # ---------- built-ins ----------
+
+    def _install_builtins(self) -> None:
+        """Register built-in functions in the global environment.
+
+        Built-ins are plain Python functions that take pre-evaluated args.
+        The interpreter validates argument counts at the call site.
+        """
+        self._builtins: dict = {
             "ask": self._builtin_ask,
             "number": self._builtin_number,
             "text": self._builtin_text,
@@ -1281,10 +1829,15 @@ class Interpreter:
             "uppercase": self._builtin_uppercase,
             "lowercase": self._builtin_lowercase,
         }
+        for name, fn in self._builtins.items():
+            self.global_env.define_function(name, fn)  # type: ignore[arg-type]
 
     def _builtin_ask(self, args, loc):
         if len(args) != 1:
-            raise TypeError_(f"`ask` takes exactly 1 argument, but I got {len(args)}.", loc)
+            raise TypeError_(
+                f"`ask` takes exactly 1 argument (a prompt), but I got {len(args)}.",
+                loc,
+            )
         prompt = _to_text(args[0])
         try:
             return input(prompt)
@@ -1293,47 +1846,78 @@ class Interpreter:
 
     def _builtin_number(self, args, loc):
         if len(args) != 1:
-            raise TypeError_(f"`number` takes exactly 1 argument, but I got {len(args)}.", loc)
+            raise TypeError_(
+                f"`number` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
         return _to_number(args[0])
 
     def _builtin_text(self, args, loc):
         if len(args) != 1:
-            raise TypeError_(f"`text` takes exactly 1 argument, but I got {len(args)}.", loc)
+            raise TypeError_(
+                f"`text` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
         return _to_text(args[0])
 
     def _builtin_random(self, args, loc):
         if len(args) != 2:
-            raise TypeError_(f"`random` takes 2 arguments (low, high), but I got {len(args)}.", loc)
-        lo = _to_number(args[0]); hi = _to_number(args[1])
-        if lo > hi: lo, hi = hi, lo
+            raise TypeError_(
+                f"`random` takes 2 arguments (low, high), but I got {len(args)}.",
+                loc,
+            )
+        lo = _to_number(args[0])
+        hi = _to_number(args[1])
+        if lo > hi:
+            lo, hi = hi, lo
+        import random as _r
         if isinstance(lo, int) and isinstance(hi, int):
-            return _random.randint(int(lo), int(hi))
-        return _random.uniform(lo, hi)
+            return _r.randint(int(lo), int(hi))
+        return _r.uniform(lo, hi)
 
     def _builtin_uppercase(self, args, loc):
         if len(args) != 1:
-            raise TypeError_(f"`uppercase` takes exactly 1 argument, but I got {len(args)}.", loc)
+            raise TypeError_(
+                f"`uppercase` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
         if not isinstance(args[0], str):
-            raise TypeError_(f"`uppercase` needs text, but I got {_typename(args[0])}.", loc)
+            raise TypeError_(
+                f"`uppercase` needs text, but I got {_typename(args[0])}.",
+                loc,
+            )
         return args[0].upper()
 
     def _builtin_lowercase(self, args, loc):
         if len(args) != 1:
-            raise TypeError_(f"`lowercase` takes exactly 1 argument, but I got {len(args)}.", loc)
+            raise TypeError_(
+                f"`lowercase` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
         if not isinstance(args[0], str):
-            raise TypeError_(f"`lowercase` needs text, but I got {_typename(args[0])}.", loc)
+            raise TypeError_(
+                f"`lowercase` needs text, but I got {_typename(args[0])}.",
+                loc,
+            )
         return args[0].lower()
 
-    def _exec_stmts(self, stmts, env):
-        for s in stmts: self._exec(s, env)
+    # ---------- statements ----------
 
-    def _exec(self, stmt, env):
+    def _exec_stmts(self, stmts: List[Statement], env: Environment) -> None:
+        for s in stmts:
+            self._exec(s, env)
+
+    def _exec(self, stmt: Statement, env: Environment) -> None:
         method = self._DISPATCH.get(type(stmt))
         if method is None:
-            raise RuntimeError_(f"I don't know how to run a {type(stmt).__name__}.", getattr(stmt, "location", None))
+            raise RuntimeError_(
+                f"I don't know how to run a {type(stmt).__name__}.",
+                getattr(stmt, "location", None),
+            )
         method(self, stmt, env)
 
-    def _exec_let(self, stmt, env):
+    def _exec_let(self, stmt: LetStatement, env: Environment) -> None:
+        # `let ada be turtle` — create a new turtle and bind it to the name.
         if isinstance(stmt.value, TurtleLiteral):
             t = self.turtles.create(stmt.name)
             env.define(stmt.name, t)
@@ -1341,66 +1925,109 @@ class Interpreter:
         value = self._eval(stmt.value, env)
         env.define(stmt.name, value)
 
-    def _exec_say(self, stmt, env):
+    def _exec_say(self, stmt: SayStatement, env: Environment) -> None:
+        # Each `parts` element is a full expression (which may contain a
+        # ConcatExpression inside). We render each one as text.
         for part in stmt.parts:
             value = self._eval(part, env)
             text = _to_text(value)
             self.output_buffer.append(text)
             print(text)
 
-    def _exec_if(self, stmt, env):
+    def _exec_if(self, stmt: IfStatement, env: Environment) -> None:
         if _to_bool(self._eval(stmt.condition, env)):
             self._exec_stmts(stmt.then_branch, env)
         elif stmt.else_branch is not None:
             self._exec_stmts(stmt.else_branch, env)
 
-    def _exec_while(self, stmt, env):
+    def _exec_while(self, stmt: WhileStatement, env: Environment) -> None:
         while _to_bool(self._eval(stmt.condition, env)):
-            self._exec_stmts(stmt.body, env)
+            try:
+                self._exec_stmts(stmt.body, env)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
 
-    def _exec_repeat(self, stmt, env):
-        count = int(_to_number(self._eval(stmt.count, env)))
-        if count < 0: count = 0
+    def _exec_repeat(self, stmt: RepeatStatement, env: Environment) -> None:
+        count = _to_number(self._eval(stmt.count, env))
+        count = int(count)
+        if count < 0:
+            count = 0
         for _ in range(count):
-            self._exec_stmts(stmt.body, env)
+            try:
+                self._exec_stmts(stmt.body, env)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
 
-    def _exec_for_each(self, stmt, env):
+    def _exec_for_each(self, stmt: ForEachStatement, env: Environment) -> None:
         iterable = self._eval(stmt.iterable, env)
         if not isinstance(iterable, list):
-            raise TypeError_(f"I can only loop over a list, but I got {_typename(iterable)}.", stmt.iterable.location)
+            raise TypeError_(
+                f"I can only loop over a list, but I got {_typename(iterable)} "
+                f"({_to_text(iterable)}).",
+                stmt.iterable.location,
+            )
         for item in iterable:
             loop_env = env.child()
             loop_env.define(stmt.var_name, item)
-            self._exec_stmts(stmt.body, loop_env)
+            try:
+                self._exec_stmts(stmt.body, loop_env)
+            except _ContinueSignal:
+                continue
+            except _BreakSignal:
+                break
 
-    def _exec_function_def(self, stmt, env):
+    def _exec_function_def(self, stmt: FunctionDef, env: Environment) -> None:
         env.define_function(stmt.name, stmt)
 
-    def _exec_return(self, stmt, env):
+    def _exec_return(self, stmt: ReturnStatement, env: Environment) -> None:
         value = self._eval(stmt.value, env) if stmt.value is not None else None
         raise _ReturnSignal(value)
 
-    def _exec_expr_stmt(self, stmt, env):
+    def _exec_expr_stmt(self, stmt: ExpressionStatement, env: Environment) -> None:
+        # A bare expression as a statement — useful for calling functions
+        # whose return value we ignore.
         self._eval(stmt.expression, env)
 
-    def _exec_move(self, stmt, env):
+    # ----- turtle statements -----
+
+    def _exec_move(self, stmt: MoveStatement, env: Environment) -> None:
         t = self.turtles.get(stmt.turtle_name)
         amount = _to_number(self._eval(stmt.amount, env))
-        if stmt.direction == "forward": t.forward(amount)
-        elif stmt.direction == "backward": t.backward(amount)
-        elif stmt.direction == "left": t.left(amount)
-        elif stmt.direction == "right": t.right(amount)
+        if stmt.direction == "forward":
+            t.forward(amount)
+        elif stmt.direction == "backward":
+            t.backward(amount)
+        elif stmt.direction == "left":
+            t.left(amount)
+        elif stmt.direction == "right":
+            t.right(amount)
+        else:
+            raise RuntimeError_(
+                f"I don't know how to move '{stmt.direction}'.",
+                stmt.location,
+            )
 
-    def _exec_make(self, stmt, env):
+    def _exec_make(self, stmt: MakeStatement, env: Environment) -> None:
         t = self.turtles.get(stmt.turtle_name)
         action = stmt.action
-        if action == "hide": t.hide()
-        elif action == "show": t.show()
-        elif action == "pen_up": t.raise_pen()
-        elif action == "pen_down": t.lower_pen()
-        elif action == "erase_all": t.clear()
-        elif action == "restart": t.reset()
-        elif action == "home": t.home()
+        if action == "hide":
+            t.hide()
+        elif action == "show":
+            t.show()
+        elif action == "pen_up":
+            t.raise_pen()
+        elif action == "pen_down":
+            t.lower_pen()
+        elif action == "erase_all":
+            t.clear()
+        elif action == "restart":
+            t.reset()
+        elif action == "home":
+            t.home()
         elif action == "draw_circle":
             r = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 0
             t.circle(r)
@@ -1411,179 +2038,618 @@ class Interpreter:
             s = _to_number(self._eval(stmt.arg, env)) if stmt.arg else 3
             t.set_speed(int(s))
         elif action == "go_to":
+            # arg is a ListLiteral of [x, y]
             if not isinstance(stmt.arg, ListLiteral) or len(stmt.arg.elements) != 2:
-                raise RuntimeError_("'go to' needs two numbers.", stmt.location)
+                raise RuntimeError_(
+                    f"'go to' needs two numbers, but I got something else.",
+                    stmt.location,
+                )
             x = _to_number(self._eval(stmt.arg.elements[0], env))
             y = _to_number(self._eval(stmt.arg.elements[1], env))
             t.goto_absolute(x, y)
+        else:
+            raise RuntimeError_(
+                f"I don't know the turtle action '{action}'.",
+                stmt.location,
+            )
 
-    def _exec_goto(self, stmt, env):
+    def _exec_goto(self, stmt: GotoStatement, env: Environment) -> None:
         t = self.turtles.get(stmt.turtle_name)
         x_amount = _to_number(self._eval(stmt.x_amount, env))
         y_amount = _to_number(self._eval(stmt.y_amount, env))
         t.goto_relative(x_amount, stmt.x_dir, y_amount, stmt.y_dir)
 
-    def _exec_set(self, stmt, env):
+    def _exec_set(self, stmt: SetStatement, env: Environment) -> None:
         t = self.turtles.get(stmt.turtle_name)
         prop = stmt.property
         value = self._eval(stmt.value, env)
-        if prop == "pen color": t.set_pen_color(_to_text(value))
-        elif prop == "pen size": t.set_pen_size(int(_to_number(value)))
-        elif prop == "background": t.set_background(_to_text(value))
+        if prop == "pen color":
+            t.set_pen_color(_to_text(value))
+        elif prop == "pen size":
+            t.set_pen_size(int(_to_number(value)))
+        elif prop == "background":
+            t.set_background(_to_text(value))
+        else:
+            raise RuntimeError_(
+                f"I don't know how to set '{prop}' on a turtle.",
+                stmt.location,
+            )
 
     _DISPATCH = {
-        LetStatement: _exec_let, SayStatement: _exec_say, IfStatement: _exec_if,
-        WhileStatement: _exec_while, RepeatStatement: _exec_repeat,
-        ForEachStatement: _exec_for_each, FunctionDef: _exec_function_def,
-        ReturnStatement: _exec_return, ExpressionStatement: _exec_expr_stmt,
-        MoveStatement: _exec_move, MakeStatement: _exec_make,
-        GotoStatement: _exec_goto, SetStatement: _exec_set,
+        LetStatement: _exec_let,
+        SayStatement: _exec_say,
+        IfStatement: _exec_if,
+        WhileStatement: _exec_while,
+        RepeatStatement: _exec_repeat,
+        ForEachStatement: _exec_for_each,
+        FunctionDef: _exec_function_def,
+        ReturnStatement: _exec_return,
+        ExpressionStatement: _exec_expr_stmt,
+        MoveStatement: _exec_move,
+        MakeStatement: _exec_make,
+        GotoStatement: _exec_goto,
+        SetStatement: _exec_set,
     }
 
-    def _eval(self, expr, env):
-        if expr is None: return None
+    # ---------- expressions ----------
+
+    def _eval(self, expr, env: Environment) -> Any:
+        if expr is None:
+            return None
         method = self._EVAL_DISPATCH.get(type(expr))
         if method is None:
-            raise RuntimeError_(f"I don't know how to evaluate a {type(expr).__name__}.", getattr(expr, "location", None))
+            raise RuntimeError_(
+                f"I don't know how to evaluate a {type(expr).__name__}.",
+                getattr(expr, "location", None),
+            )
         return method(self, expr, env)
 
-    def _eval_number(self, e, env): return e.value
-    def _eval_string(self, e, env): return e.value
-    def _eval_bool(self, e, env): return e.value
-    def _eval_nothing(self, e, env): return None
+    def _eval_number(self, e: NumberLiteral, env):
+        return e.value
 
-    def _eval_ident(self, e, env):
-        try: return env.get(e.name)
+    def _eval_string(self, e: StringLiteral, env):
+        return e.value
+
+    def _eval_bool(self, e: BoolLiteral, env):
+        return e.value
+
+    def _eval_nothing(self, e: NothingLiteral, env):
+        return None
+
+    def _eval_ident(self, e: Identifier, env):
+        name = e.name
+        try:
+            return env.get(name)
         except KeyError:
-            raise NameError_(f"I don't know what '{e.name}' means. Did you forget to define it with `let {e.name} be ...`?", e.location)
+            raise NameError_(
+                f"I don't know what '{name}' means. "
+                f"Did you forget to define it with `let {name} be ...`?",
+                e.location,
+            )
 
-    def _eval_list(self, e, env):
+    def _eval_list(self, e: ListLiteral, env):
         return [self._eval(x, env) for x in e.elements]
 
-    def _eval_concat(self, e, env):
+    def _eval_concat(self, e: ConcatExpression, env):
+        # `,` is the string-concat operator: convert each part to text and join.
         return "".join(_to_text(self._eval(p, env)) for p in e.parts)
 
-    def _eval_binary(self, e, env):
+    def _eval_binary(self, e: BinaryOp, env):
         op = e.op
+        # Short-circuit logic
         if op == "and":
             left = self._eval(e.left, env)
-            if not _to_bool(left): return left
+            if not _to_bool(left):
+                return left
             return self._eval(e.right, env)
         if op == "or":
             left = self._eval(e.left, env)
-            if _to_bool(left): return left
+            if _to_bool(left):
+                return left
             return self._eval(e.right, env)
+
         left = self._eval(e.left, env)
         right = self._eval(e.right, env)
-        if op == "plus": return _to_number(left) + _to_number(right)
-        if op == "minus": return _to_number(left) - _to_number(right)
-        if op == "times": return _to_number(left) * _to_number(right)
+
+        if op == "plus":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln + rn
+        if op == "minus":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln - rn
+        if op == "times":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln * rn
         if op == "divided by":
             rn = _to_number(right)
-            if rn == 0: raise RuntimeError_("I can't divide by zero.", e.right.location)
+            if rn == 0:
+                raise RuntimeError_(
+                    "I can't divide by zero. Math says no!",
+                    e.right.location,
+                )
             result = _to_number(left) / rn
+            # If both operands were ints and the result is whole, return an int.
             if isinstance(left, int) and isinstance(right, int) and isinstance(result, float) and result.is_integer():
                 return int(result)
             return result
         if op == "mod":
-            rn = _to_number(right)
-            if rn == 0: raise RuntimeError_("I can't mod by zero.", e.right.location)
-            return _to_number(left) % rn
-        if op == "is": return left == right
-        if op == "is not equal to": return left != right
-        if op == "is greater than": return _to_number(left) > _to_number(right)
-        if op == "is less than": return _to_number(left) < _to_number(right)
-        if op == "is greater than or equal to": return _to_number(left) >= _to_number(right)
-        if op == "is less than or equal to": return _to_number(left) <= _to_number(right)
+            ln, rn = _to_number(left), _to_number(right)
+            if rn == 0:
+                raise RuntimeError_(
+                    "I can't mod by zero.",
+                    e.right.location,
+                )
+            return ln % rn
+
+        if op == "is":
+            return left == right
+        if op == "is not equal to":
+            return left != right
+        if op == "is greater than":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln > rn
+        if op == "is less than":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln < rn
+        if op == "is greater than or equal to":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln >= rn
+        if op == "is less than or equal to":
+            ln, rn = _to_number(left), _to_number(right)
+            return ln <= rn
+
         raise RuntimeError_(f"I don't know the operator '{op}'.", e.location)
 
-    def _eval_unary(self, e, env):
-        if e.op == "not": return not _to_bool(self._eval(e.operand, env))
-        if e.op == "minus": return -_to_number(self._eval(e.operand, env))
+    def _eval_unary(self, e: UnaryOp, env):
+        if e.op == "not":
+            return not _to_bool(self._eval(e.operand, env))
+        if e.op == "minus":
+            return -_to_number(self._eval(e.operand, env))
         raise RuntimeError_(f"I don't know the operator '{e.op}'.", e.location)
 
-    def _eval_index(self, e, env):
+    def _eval_index(self, e: IndexExpression, env):
         coll = self._eval(e.collection, env)
-        idx = int(_to_number(self._eval(e.index, env)))
+        idx = self._eval(e.index, env)
+        idx_n = int(_to_number(idx))
         if not isinstance(coll, list):
-            raise TypeError_(f"I can't use 'at' on {_typename(coll)}. `at` only works on lists.", e.location)
-        if idx < 0: idx += len(coll)
-        if idx < 0 or idx >= len(coll):
-            raise RuntimeError_(f"I tried to get item {idx} from a list of size {len(coll)}.", e.index.location)
-        return coll[idx]
+            raise TypeError_(
+                f"I can't use 'at' on {_typename(coll)} ({_to_text(coll)}). "
+                f"`at` only works on lists.",
+                e.location,
+            )
+        if idx_n < 0:
+            idx_n += len(coll)
+        if idx_n < 0 or idx_n >= len(coll):
+            raise RuntimeError_(
+                f"I tried to get item {idx_n} from a list of size {len(coll)}, "
+                f"but that item doesn't exist (lists start at 0 and go to {len(coll) - 1}).",
+                e.index.location,
+            )
+        return coll[idx_n]
 
-    def _eval_size(self, e, env):
+    def _eval_size(self, e: SizeExpression, env):
         coll = self._eval(e.collection, env)
-        if isinstance(coll, (list, str)): return len(coll)
-        raise TypeError_(f"I can't get the size of {_typename(coll)}.", e.location)
+        if isinstance(coll, list):
+            return len(coll)
+        if isinstance(coll, str):
+            return len(coll)
+        raise TypeError_(
+            f"I can't get the size of {_typename(coll)} ({_to_text(coll)}). "
+            f"Use `size of` on a list or some text.",
+            e.location,
+        )
 
-    def _eval_with_added(self, e, env):
+    def _eval_with_added(self, e: WithAddedExpression, env):
         coll = self._eval(e.collection, env)
         if not isinstance(coll, list):
-            raise TypeError_(f"I can only add to a list with 'with ... added'.", e.location)
-        return coll + [self._eval(e.value, env)]
+            raise TypeError_(
+                f"I can only add to a list with 'with ... added', "
+                f"but I got {_typename(coll)} ({_to_text(coll)}).",
+                e.location,
+            )
+        value = self._eval(e.value, env)
+        return coll + [value]
 
-    def _eval_turtle_literal(self, e, env):
+    def _eval_turtle_literal(self, e: TurtleLiteral, env):
+        """`turtle` — a marker for "create a new turtle". We need a name to
+        bind it to, but the parser already consumed the name via LetStatement.
+        However, in the existing LetStatement executor, we just call
+        `_eval(stmt.value, env)` and assign whatever it returns. So we
+        return a sentinel that `_exec_let` recognizes.
+
+        Actually, simpler: return a special wrapper and let the let-statement
+        executor do the create-and-bind itself. But that requires changing
+        the let executor. Cleaner: have `let ada be turtle` go through a
+        special path.
+
+        Decision: We return a `_TurtleFactory` sentinel here, and the
+        let-statement executor checks for it and creates the turtle."""
+                # Return a placeholder; _exec_let will detect TurtleLiteral and
+        # create a new turtle with the bound name.
         return _turtle_factory_marker()
 
-    def _eval_call(self, e, env):
+    def _eval_call(self, e: CallExpression, env):
         name = e.callee
-        if (len(e.arguments) == 1 and isinstance(e.arguments[0], Identifier) and name in self.turtles.turtles):
+        # Turtle property access: `ada heading` / `ada x` / `ada y`.
+        # The parser can't tell at parse time whether `ada` is a turtle
+        # or a function, so we dispatch at runtime: if the first argument
+        # is an Identifier and the callee is a Turtle, treat as property
+        # read.
+        if (len(e.arguments) == 1
+                and isinstance(e.arguments[0], Identifier)
+                and name in self.turtles.turtles):
             t = self.turtles.get(name)
             prop = e.arguments[0].name
-            if prop == "heading": return t.heading
-            if prop == "x": return t.x
-            if prop == "y": return t.y
-            raise RuntimeError_(f"I don't know what property '{prop}' means on a turtle.", e.location)
+            if prop == "heading":
+                return t.heading
+            if prop == "x":
+                return t.x
+            if prop == "y":
+                return t.y
+            raise RuntimeError_(
+                f"I don't know what property '{prop}' means on a turtle. "
+                f"Try 'heading', 'x', or 'y'.",
+                e.location,
+            )
+
         args = [self._eval(a, env) for a in e.arguments]
+
+        # Built-in first
         if name in self._builtins:
             return self._builtins[name](args, e.location)
+
+        # User-defined function
         func = env.get_function(name)
         if func is None:
-            raise NameError_(f"I don't know a function called '{name}'.", e.location)
+            raise NameError_(
+                f"I don't know a function called '{name}'.",
+                e.location,
+            )
+
         if len(func.params) != len(args):
-            raise TypeError_(f"The function '{name}' expects {len(func.params)} argument(s) but I got {len(args)}.", e.location)
-        call_env = env.child()
+            raise TypeError_(
+                f"The function '{name}' expects {len(func.params)} argument"
+                f"{'s' if len(func.params) != 1 else ''} "
+                f"but I got {len(args)}.",
+                e.location,
+            )
+
+        call_env = self.global_env.child() if func.name in self._builtins else env.child()
         for pname, pval in zip(func.params, args):
             call_env.define(pname, pval)
-        try: self._exec_stmts(func.body, call_env)
-        except _ReturnSignal as ret: return ret.value
+        try:
+            self._exec_stmts(func.body, call_env)
+        except _ReturnSignal as ret:
+            return ret.value
         return None
 
     _EVAL_DISPATCH = {
-        NumberLiteral: _eval_number, StringLiteral: _eval_string,
-        BoolLiteral: _eval_bool, NothingLiteral: _eval_nothing,
-        Identifier: _eval_ident, ListLiteral: _eval_list,
-        ConcatExpression: _eval_concat, BinaryOp: _eval_binary,
-        UnaryOp: _eval_unary, CallExpression: _eval_call,
-        IndexExpression: _eval_index, SizeExpression: _eval_size,
-        WithAddedExpression: _eval_with_added, TurtleLiteral: _eval_turtle_literal,
+        NumberLiteral: _eval_number,
+        StringLiteral: _eval_string,
+        BoolLiteral: _eval_bool,
+        NothingLiteral: _eval_nothing,
+        Identifier: _eval_ident,
+        ListLiteral: _eval_list,
+        ConcatExpression: _eval_concat,
+        BinaryOp: _eval_binary,
+        UnaryOp: _eval_unary,
+        CallExpression: _eval_call,
+        IndexExpression: _eval_index,
+        SizeExpression: _eval_size,
+        WithAddedExpression: _eval_with_added,
+        TurtleLiteral: _eval_turtle_literal,
     }
 
-# --- Web API ---
-def run_e(source_code, input_func=None):
-    """Run E source code and return (output, turtle_logs, error)."""
-    import builtins
-    original_input = builtins.input
-    if input_func:
-        builtins.input = input_func
-    try:
-        interp = Interpreter("<playground>", turtle_mode="text")
-        interp.run_string(source_code)
-        turtle_data = {}
-        for name, t in interp.turtles.turtles.items():
-            turtle_data[name] = {
-                "log": t.log,
-                "x": t.x, "y": t.y,
-                "pen_color": t.pen_color,
-                "pen_size": t.pen_size,
-                "background": t.background,
-                "visible": t.visible,
-            }
-        return interp.output_buffer, turtle_data, None
-    except (LexerError, ParseError, RuntimeError_, NameError_, TypeError_) as e:
-        return [], {}, e.format()
-    except Exception as e:
-        return [], {}, f"E Error: {e}"
-    finally:
-        builtins.input = original_input
+
+# --- src/turtle_runtime.py ---
+"""Turtle runtime for the E language.
+
+Provides a `Turtle` class that wraps Python's built-in `turtle` module,
+plus a `TurtleManager` that tracks multiple named turtles within a single
+E program.
+
+Supports two modes:
+
+* `window` — opens a real tkinter window and draws visually.
+* `text`   — headless. No window is opened; instead, every command is
+             appended to a per-turtle command log. Useful for tests and
+             for running on a machine with no display (e.g. CI).
+
+The mode is selected at construction time. When `auto` is requested, the
+runtime tries to open a window; if tkinter fails for any reason, it
+falls back to text mode silently.
+"""
+
+from __future__ import annotations
+import math
+import sys
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
+
+
+# ---------- one turtle ----------
+
+class Turtle:
+    """A single named turtle. Maintains its own state.
+
+    In window mode, every state-changing method also forwards to Python's
+    `turtle.Turtle` so a window appears. In text mode, state is tracked
+    locally and commands are appended to `self.log`.
+    """
+
+    def __init__(self, name: str, mode: str):
+        self.name = name
+        self.mode = mode                # 'window' | 'text'
+        self.log: List[str] = []
+
+        # State
+        self.x: float = 0.0
+        self.y: float = 0.0
+        self.heading: float = 0.0       # degrees; 0 = right (east)
+        self.pen_down: bool = True
+        self.pen_color: str = "black"
+        self.pen_size: int = 1
+        self.background: str = "white"
+        self.visible: bool = True
+        self.speed: int = 3             # 0 = fastest, 1-10 = slow to medium
+
+        # Underlying Python turtle (only in window mode)
+        self._t: Optional[object] = None
+        if self.mode == "window":
+            try:
+                import turtle as _py_turtle
+                self._t = _py_turtle.Turtle()
+                self._t.speed(self.speed)
+            except Exception:
+                # tkinter failed — fall back to text mode for this turtle
+                self.mode = "text"
+                self._t = None
+
+    # ----- low-level helpers -----
+
+    def _log(self, msg: str) -> None:
+        if self.mode == "text":
+            self.log.append(f">> {msg}")
+
+    def _to_radians(self) -> float:
+        return math.radians(self.heading)
+
+    # ----- movement -----
+
+    def forward(self, n: float) -> None:
+        if self.pen_down and self._t is not None:
+            self._t.forward(n)         # type: ignore[union-attr]
+        rad = self._to_radians()
+        self.x += n * math.cos(rad)
+        self.y += n * math.sin(rad)
+        self._log(f"forward {n}")
+
+    def backward(self, n: float) -> None:
+        if self.pen_down and self._t is not None:
+            self._t.backward(n)        # type: ignore[union-attr]
+        rad = self._to_radians()
+        self.x -= n * math.cos(rad)
+        self.y -= n * math.sin(rad)
+        self._log(f"backward {n}")
+
+    def left(self, n: float) -> None:
+        if self._t is not None:
+            self._t.left(n)             # type: ignore[union-attr]
+        self.heading = (self.heading + n) % 360
+        self._log(f"left {n}")
+
+    def right(self, n: float) -> None:
+        if self._t is not None:
+            self._t.right(n)            # type: ignore[union-attr]
+        self.heading = (self.heading - n) % 360
+        self._log(f"right {n}")
+
+    # ----- cursor visibility -----
+
+    def hide(self) -> None:
+        self.visible = False
+        if self._t is not None:
+            self._t.hideturtle()        # type: ignore[union-attr]
+        self._log("hide")
+
+    def show(self) -> None:
+        self.visible = True
+        if self._t is not None:
+            self._t.showturtle()        # type: ignore[union-attr]
+        self._log("show")
+
+    # ----- pen state -----
+    # Methods are named raise_pen/lower_pen so they don't collide with the
+    # self.pen_down boolean attribute.
+
+    def raise_pen(self) -> None:
+        self.pen_down = False
+        if self._t is not None:
+            self._t.penup()             # type: ignore[union-attr]
+        self._log("pen_up")
+
+    def lower_pen(self) -> None:
+        self.pen_down = True
+        if self._t is not None:
+            self._t.pendown()           # type: ignore[union-attr]
+        self._log("pen_down")
+
+    # ----- clearing / resetting -----
+
+    def clear(self) -> None:
+        if self._t is not None:
+            self._t.clear()             # type: ignore[union-attr]
+        self.log.clear()
+        self._log("erase_all")
+
+    def home(self) -> None:
+        if self._t is not None:
+            self._t.home()              # type: ignore[union-attr]
+        self.x = 0.0
+        self.y = 0.0
+        self.heading = 0.0
+        self._log("home")
+
+    def reset(self) -> None:
+        """Factory reset: clear + home + restore all defaults."""
+        if self._t is not None:
+            self._t.reset()             # type: ignore[union-attr]
+        self.x = 0.0
+        self.y = 0.0
+        self.heading = 0.0
+        self.pen_down = True
+        self.pen_color = "black"
+        self.pen_size = 1
+        self.background = "white"
+        self.visible = True
+        self.speed = 3
+        self.log.clear()
+        self._log("restart")
+
+    # ----- shape drawing -----
+
+    def circle(self, r: float) -> None:
+        if self._t is not None:
+            self._t.circle(r)           # type: ignore[union-attr]
+        # Approximate: 36 sample points (full circle) and update position
+        # based on the heading. Python's turtle.circle() with the default
+        # extent=360 leaves the turtle at the start; we mirror that.
+        self._log(f"draw_circle {r}")
+
+    def dot(self, size: float) -> None:
+        if self._t is not None:
+            self._t.dot(int(size))      # type: ignore[union-attr]
+        self._log(f"draw_dot {size}")
+
+    # ----- positioning -----
+
+    def goto_relative(self, x_amount: float, x_dir: str,
+                      y_amount: float, y_dir: str) -> None:
+        dx = x_amount if x_dir == "right" else -x_amount
+        dy = y_amount if y_dir == "up"    else -y_amount
+        target_x = self.x + dx
+        target_y = self.y + dy
+        if self._t is not None:
+            self._t.goto(target_x, target_y)  # type: ignore[union-attr]
+        self.x = target_x
+        self.y = target_y
+        self._log(f"goto {x_amount} {x_dir} and {y_amount} {y_dir}")
+
+    def goto_absolute(self, x: float, y: float) -> None:
+        if self._t is not None:
+            self._t.goto(x, y)          # type: ignore[union-attr]
+        self.x = x
+        self.y = y
+        self._log(f"go_to {x} and {y}")
+
+    # ----- speed -----
+
+    def set_speed(self, n: int) -> None:
+        self.speed = max(0, min(10, int(n)))
+        if self._t is not None:
+            self._t.speed(self.speed)   # type: ignore[union-attr]
+        self._log(f"speed {self.speed}")
+
+    # ----- properties (for `set`) -----
+
+    def set_pen_color(self, color: str) -> None:
+        self.pen_color = str(color)
+        if self._t is not None:
+            self._t.pencolor(self.pen_color)  # type: ignore[union-attr]
+        self._log(f"pen_color {self.pen_color}")
+
+    def set_pen_size(self, n: int) -> None:
+        self.pen_size = max(1, int(n))
+        if self._t is not None:
+            self._t.pensize(self.pen_size)     # type: ignore[union-attr]
+        self._log(f"pen_size {self.pen_size}")
+
+    def set_background(self, color: str) -> None:
+        self.background = str(color)
+        if self._t is not None:
+            try:
+                import turtle as _py_turtle
+                _py_turtle.bgcolor(self.background)  # type: ignore[union-attr]
+            except Exception:
+                pass
+        self._log(f"background {self.background}")
+
+    # ----- finalization -----
+
+    def close(self) -> None:
+        """Release the underlying turtle (if any). Safe to call multiple times."""
+        if self._t is not None:
+            try:
+                self._t.hideturtle()    # type: ignore[union-attr]
+            except Exception:
+                pass
+
+
+# ---------- the manager ----------
+
+class TurtleManager:
+    """Owns all turtles for one E program run.
+
+    Mode can be 'auto' (try to open a window, fall back to text), 'window'
+    (force a window), or 'text' (headless, no window).
+    """
+
+    def __init__(self, requested_mode: str = "auto"):
+        if requested_mode not in ("auto", "window", "text"):
+            raise ValueError(
+                f"turtle mode must be 'auto', 'window', or 'text', "
+                f"got {requested_mode!r}"
+            )
+        self.requested_mode = requested_mode
+        self.turtles: Dict[str, Turtle] = {}
+        self._resolved_mode: Optional[str] = None
+        self._init_error: Optional[str] = None
+
+    def _resolve_mode(self) -> str:
+        if self._resolved_mode is not None:
+            return self._resolved_mode
+        if self.requested_mode == "text":
+            self._resolved_mode = "text"
+            return self._resolved_mode
+        # Try window mode
+        try:
+            import tkinter                      # noqa: F401
+            self._resolved_mode = "window"
+        except Exception as e:
+            self._init_error = str(e)
+            self._resolved_mode = "text"
+        return self._resolved_mode
+
+    def create(self, name: str) -> Turtle:
+        if name in self.turtles:
+            raise RuntimeError(
+                f"You already made a turtle called '{name}'. "
+                f"Give it a different name."
+            )
+        mode = self._resolve_mode()
+        t = Turtle(name, mode)
+        self.turtles[name] = t
+        return t
+
+    def get(self, name: str) -> Turtle:
+        if name not in self.turtles:
+            raise RuntimeError(
+                f"I don't know a turtle called '{name}'. "
+                f"Did you forget to write `let {name} be turtle` first?"
+            )
+        return self.turtles[name]
+
+    def close_all(self) -> None:
+        for t in self.turtles.values():
+            t.close()
+        # If we opened any window, try to clean it up. Importing inside
+        # the function keeps the import optional.
+        if self._resolved_mode == "window":
+            try:
+                import turtle as _py_turtle
+                _py_turtle.bye()
+            except Exception:
+                # We're probably not in the main thread; just let the
+                # window be. Python's atexit will clean up.
+                pass
+
