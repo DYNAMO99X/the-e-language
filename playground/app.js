@@ -60,39 +60,35 @@ const E_LANG_CONFIG = {
 const EXAMPLES = {
     'Hello, World': `say "Hello, world!"`,
 
-    'Calculator': `-- Simple calculator
-let name be ask "What is your name? "
-say "Hello, " , name , "!"
+    'Calculator': `-- Simple calculator (hardcoded values for playground)
+let num1 be 12
+let num2 be 4
 
-let a be ask "Enter first number: "
-let b be ask "Enter second number: "
-
-let num1 be number a
-let num2 be number b
-
+say "num1 = " , num1
+say "num2 = " , num2
+say ""
 say "Sum: " , (num1 plus num2)
 say "Difference: " , (num1 minus num2)
-say "Product: " , (num1 times num2)`,
+say "Product: " , (num1 times num2)
+say "Division: " , (num1 divided by num2)
+say "Remainder: " , (num1 mod num2)`,
 
-    'Guessing Game': `-- Number guessing game
-let secret be random 1, 100
-let guesses be 0
-let won be false
+    'Guessing Game': `-- Guessing game (simulated, no input in browser)
+let secret be 42
+say "The secret number is: " , secret
+say ""
 
-say "I'm thinking of a number between 1 and 100."
+repeat 5 times
+    let i be repeat count
+    let guess be (i times 10)
+    say "Guess #" , i , ": " , guess
 
-while won is not true
-    let guess be ask "Your guess? "
-    let num be number guess
-    let guesses be guesses plus 1
-
-    if num is less than secret then
-        say "Too low!"
-    else if num is greater than secret then
-        say "Too high!"
+    if guess is less than secret then
+        say "  Too low!"
+    else if guess is greater than secret then
+        say "  Too high!"
     else
-        say "You got it in " , guesses , " guesses!"
-        let won be true
+        say "  You got it!"
     end
 end`,
 
