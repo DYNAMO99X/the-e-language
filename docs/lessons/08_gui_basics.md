@@ -1,4 +1,4 @@
-# Lesson 6 — GUI basics (windows, buttons, labels)
+# Lesson 8 — GUI basics (windows, buttons, labels)
 
 **Goal:** Build simple GUI windows with buttons, labels, and text inputs.
 
@@ -211,7 +211,7 @@ show win
 ```
 
 The turtle draws in its own window; the GUI has its own window.
-They're independent. (We'll explore this more in Lesson 13.)
+They're independent. (We'll explore this more in Lesson 15.)
 
 ## Exit ticket
 
@@ -222,4 +222,4 @@ Without looking:
 3. What's the difference between a label and a text input?
 4. How does the grid layout work? What does `row 1 and column 0` mean?
 
-If yes, on to Lesson 7 — making choices!
+If yes, on to Lesson 9 — making choices!

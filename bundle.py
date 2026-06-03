@@ -16,6 +16,7 @@ FILES = [
     "environment.py",
     "turtle_runtime.py",
     "gui_runtime.py",
+    "web.py",
     "interpreter.py",
 ]
 

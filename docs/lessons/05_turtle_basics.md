@@ -165,4 +165,4 @@ Without looking:
 2. What's the difference between `forward 50` and `backward 50`?
 3. How would you draw a triangle? How many degrees at each corner?
 
-If yes, on to Lesson 6 — GUI basics!
+If yes, on to Lesson 8 — GUI basics!

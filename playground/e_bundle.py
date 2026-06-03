@@ -166,6 +166,14 @@ class TokenType(Enum):
     COLUMN = auto()        # column  (grid layout)
     DO = auto()            # do      ("make win do on_click when btn clicked")
     TEXT_OF = auto()       # text of ("let val be text of name")
+    # Web / JSON tokens
+    STATUS_OF = auto()     # status of ("say status of resp")
+    BODY_OF = auto()       # body of ("say body of resp")
+    JSON_OF = auto()       # json of ("let data be json of resp")
+    JSON_PARSE = auto()    # json parse ("let obj be json parse text")
+    JSON_KEYS = auto()     # json keys ("let keys be json keys obj")
+    JSON_VALUE = auto()    # json value ("let val be json value obj, key")
+    TIMEOUT = auto()       # timeout keyword ("get url, timeout 5")
 
     # --- Structural ---
     NEWLINE = auto()       # statement separator (optional in many places)
@@ -227,6 +235,18 @@ _MULTI_WORD: dict = {
         (("input",), TokenType.TEXT_INPUT),
         (("of",), TokenType.TEXT_OF),
     ],
+    "status": [
+        (("of",), TokenType.STATUS_OF),
+    ],
+    "body": [
+        (("of",), TokenType.BODY_OF),
+    ],
+    "json": [
+        (("of",), TokenType.JSON_OF),
+        (("parse",), TokenType.JSON_PARSE),
+        (("keys",), TokenType.JSON_KEYS),
+        (("value",), TokenType.JSON_VALUE),
+    ],
 }
 
 # Single-word keywords. Every multi-word starter should ALSO be here, so the
@@ -282,6 +302,8 @@ _KEYWORDS: dict = {
     "row": TokenType.ROW,
     "column": TokenType.COLUMN,
     "do": TokenType.DO,
+    # Web keywords
+    "timeout": TokenType.TIMEOUT,
 }
 
 
@@ -945,6 +967,14 @@ class TextOf(Expression):
     location: Optional[SourceLocation] = None
 
 
+@dataclass
+class TimeoutValuePair(Expression):
+    """`timeout <value>` pair in get/post calls (keyword arg)."""
+    keyword: str
+    value: Expression
+    location: Optional[SourceLocation] = None
+
+
 
 # --- src/parser.py ---
 """Parser for the E language.
@@ -996,7 +1026,7 @@ from src.ast_nodes import (
     IndexExpression, SizeExpression, WithAddedExpression,
     TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
     WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
-    ShowWindow, HideWindow, TextOf,
+    ShowWindow, HideWindow, TextOf, TimeoutValuePair,
 )
 from src.errors import ParseError, SourceLocation
 
@@ -1012,6 +1042,14 @@ _EXPR_START: Set[TokenType] = {
     TokenType.LPAREN, TokenType.LBRACKET, TokenType.NOT,
     TokenType.SIZE,  # 'size of X'
     TokenType.TEXT_OF,  # 'text of widget'
+    # Web / JSON multi-word function names
+    TokenType.STATUS_OF,  # 'status of resp'
+    TokenType.BODY_OF,    # 'body of resp'
+    TokenType.JSON_OF,    # 'json of resp'
+    TokenType.JSON_PARSE, # 'json parse text'
+    TokenType.JSON_KEYS,  # 'json keys obj'
+    TokenType.JSON_VALUE, # 'json value obj, key'
+    TokenType.TIMEOUT,    # 'timeout 5' in get/post calls
 }
 
 # Tokens that END a block (no statements after these in the current block).
@@ -1469,7 +1507,7 @@ class Parser:
             return TextOf(widget=operand, location=op_tok.location)
         return self._parse_primary()
 
-    def _parse_primary(self) -> Optional[object]:
+    def _parse_primary(self, allow_call: bool = True) -> Optional[object]:
         tok = self._peek()
 
         if tok.type == TokenType.NUMBER:
@@ -1500,9 +1538,18 @@ class Parser:
         if tok.type == TokenType.LBRACKET:
             return self._parse_list_literal()
         if tok.type == TokenType.IDENT:
-            return self._parse_ident_or_call()
+            return self._parse_ident_or_call(allow_call=allow_call)
+        if tok.type == TokenType.TIMEOUT:
+            # 'timeout' in `get "url", timeout 5` — treat as string "timeout"
+            self._advance()
+            return StringLiteral(value="timeout", location=tok.location)
         if tok.type == TokenType.ASK:
             return self._parse_ask()
+        # Web / JSON multi-word function names
+        if tok.type in (TokenType.STATUS_OF, TokenType.BODY_OF,
+                        TokenType.JSON_OF, TokenType.JSON_PARSE,
+                        TokenType.JSON_KEYS, TokenType.JSON_VALUE):
+            return self._parse_web_call()
 
         return None
 
@@ -1513,10 +1560,41 @@ class Parser:
             raise self._error("After 'ask' I expected a prompt string")
         return CallExpression(callee="ask", arguments=[prompt], location=ask_tok.location)
 
-    def _parse_ident_or_call(self) -> object:
+    def _parse_web_call(self) -> object:
+        """Parse multi-word web/JSON function calls.
+
+        Handles: status of, body of, json of, json parse, json keys, json value
+        The multi-word token is already consumed; we parse the arguments.
+        """
+        tok = self._advance()  # consume the multi-word token
+        callee_map = {
+            TokenType.STATUS_OF: "status of",
+            TokenType.BODY_OF: "body of",
+            TokenType.JSON_OF: "json of",
+            TokenType.JSON_PARSE: "json parse",
+            TokenType.JSON_KEYS: "json keys",
+            TokenType.JSON_VALUE: "json value",
+        }
+        callee = callee_map[tok.type]
+
+        # Parse arguments: single value, or two values separated by comma
+        first = self._parse_call_arg()
+        if first is None:
+            raise self._error(f"After '{callee}' I expected an argument")
+        args = [first]
+        if self._check(TokenType.COMMA):
+            self._advance()
+            second = self._parse_call_arg()
+            if second is None:
+                raise self._error(f"After ',' in '{callee}' I expected a second argument")
+            args.append(second)
+
+        return CallExpression(callee=callee, arguments=args, location=tok.location)
+
+    def _parse_ident_or_call(self, allow_call: bool = True) -> object:
         name_tok = self._advance()  # IDENT
         # Look ahead: if the next token starts an expression, this is a call.
-        if self._peek().type in _EXPR_START:
+        if allow_call and self._peek().type in _EXPR_START:
             # Function call args are SINGLE VALUES (possibly with postfix).
             # Use a restricted parser so the call doesn't greedily eat operators
             # that belong to the surrounding expression. For complex args,
@@ -1540,9 +1618,22 @@ class Parser:
         It does NOT include binary operators, comparisons, or boolean logic —
         those belong to the surrounding expression. Use parens for complex args.
         """
-        expr = self._parse_primary()
+        expr = self._parse_primary(allow_call=False)
         if expr is None:
             return None
+        # Special case: `timeout <value>` in get/post calls.
+        # The TIMEOUT keyword is parsed as StringLiteral("timeout") by
+        # _parse_primary.  Consume the next primary as the timeout value
+        # and return a TimeoutValuePair so the interpreter can unpack it.
+        if (isinstance(expr, StringLiteral) and expr.value == "timeout"
+                and self._peek().type in _EXPR_START):
+            value = self._parse_primary(allow_call=False)
+            if value is not None:
+                return TimeoutValuePair(
+                    keyword="timeout",
+                    value=value,
+                    location=expr.location,
+                )
         # Postfix `at`
         while self._check(TokenType.AT):
             self._advance()
@@ -2552,6 +2643,207 @@ class GuiManager:
 
 
 
+# --- src/web.py ---
+"""Web request and JSON utilities for the E language.
+
+Provides HTTP GET/POST requests and JSON parsing/handling using only
+the Python standard library (urllib + json).
+
+Usage from the interpreter:
+    result = http_get("https://api.example.com/data")
+    result = http_get("https://api.example.com/data", timeout=5)
+    result = http_post("https://api.example.com/data", '{"key": "val"}')
+    result = http_post("https://api.example.com/data", '{"key": "val"}', timeout=5)
+    parsed = json_parse('{"key": "value"}')
+    converted = json_of(parsed)  # back to JSON string
+    keys = json_keys(parsed)
+    val = json_value(parsed, "key")
+"""
+
+from __future__ import annotations
+
+import json as _json
+from dataclasses import dataclass
+from typing import Any, List, Optional
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+
+
+DEFAULT_TIMEOUT = 10  # seconds
+
+
+@dataclass
+class HttpResult:
+    """A simple HTTP response wrapper."""
+    status: int
+    body: str
+
+
+def http_get(url: str, timeout: int = DEFAULT_TIMEOUT) -> HttpResult:
+    """Perform an HTTP GET request. Returns an HttpResult."""
+    try:
+        req = Request(url, method="GET")
+        req.add_header("User-Agent", "E-Language/0.4")
+        with urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return HttpResult(status=resp.status, body=body)
+    except HTTPError as e:
+        # Server returned an error status (4xx, 5xx) — still return the response
+        body = ""
+        if e.fp is not None:
+            try:
+                body = e.fp.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+        return HttpResult(status=e.code, body=body)
+    except URLError as e:
+        raise RuntimeError(
+            f"I couldn't reach the server: {e.reason}"
+        )
+    except TimeoutError:
+        raise RuntimeError(
+            f"I couldn't reach the server: the request timed out after {timeout} seconds"
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"I couldn't reach the server: {e}"
+        )
+
+
+def http_post(url: str, body: str = "", timeout: int = DEFAULT_TIMEOUT) -> HttpResult:
+    """Perform an HTTP POST request. Returns an HttpResult."""
+    data = body.encode("utf-8") if body else None
+    try:
+        req = Request(url, data=data, method="POST")
+        req.add_header("User-Agent", "E-Language/0.4")
+        if body:
+            req.add_header("Content-Type", "application/json")
+        with urlopen(req, timeout=timeout) as resp:
+            resp_body = resp.read().decode("utf-8", errors="replace")
+            return HttpResult(status=resp.status, body=resp_body)
+    except HTTPError as e:
+        resp_body = ""
+        if e.fp is not None:
+            try:
+                resp_body = e.fp.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+        return HttpResult(status=e.code, body=resp_body)
+    except URLError as e:
+        raise RuntimeError(
+            f"I couldn't reach the server: {e.reason}"
+        )
+    except TimeoutError:
+        raise RuntimeError(
+            f"I couldn't reach the server: the request timed out after {timeout} seconds"
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"I couldn't reach the server: {e}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# JSON helpers
+# ---------------------------------------------------------------------------
+
+def json_parse(text: str) -> Any:
+    """Parse a JSON string into E data structures.
+
+    - JSON objects  → list of [key, value] pairs: [["name", "Alice"], ["age", 30]]
+    - JSON arrays   → Python lists
+    - JSON strings  → Python strings
+    - JSON numbers  → Python int or float
+    - JSON booleans → Python bool
+    - JSON null     → None
+    """
+    try:
+        raw = _json.loads(text)
+    except _json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"I couldn't read the JSON: {e.msg} (line {e.lineno}, column {e.colno})"
+        )
+    return _to_e_value(raw)
+
+
+def _to_e_value(obj: Any) -> Any:
+    """Recursively convert a Python object (from json.loads) to E-friendly values."""
+    if isinstance(obj, dict):
+        # JSON object → list of [key, value] pairs
+        return [[str(k), _to_e_value(v)] for k, v in obj.items()]
+    if isinstance(obj, list):
+        return [_to_e_value(item) for item in obj]
+    # primitives pass through (str, int, float, bool, None)
+    return obj
+
+
+def json_of(value: Any) -> str:
+    """Convert a value to a JSON string.
+
+    - If given an HttpResult, parses its body as JSON and re-serializes.
+    - If given a list (E data structure), converts back to JSON.
+    - If given a string, tries to parse it as JSON, then re-serializes.
+    """
+    if isinstance(value, HttpResult):
+        # Parse the response body, then dump back to JSON
+        raw = _json.loads(value.body)
+        return _json.dumps(raw, ensure_ascii=False, indent=2)
+    if isinstance(value, str):
+        # Try to parse as JSON, then re-serialize for pretty output
+        try:
+            raw = _json.loads(value)
+            return _json.dumps(raw, ensure_ascii=False, indent=2)
+        except _json.JSONDecodeError:
+            # Not JSON — just return the string as a JSON-encoded string
+            return _json.dumps(value, ensure_ascii=False)
+    # list, dict, int, float, bool, None — convert to JSON
+    py_val = _from_e_value(value)
+    return _json.dumps(py_val, ensure_ascii=False, indent=2)
+
+
+def _from_e_value(obj: Any) -> Any:
+    """Convert E data structures back to Python objects for json.dumps."""
+    if isinstance(obj, list):
+        # Check if it's a list-of-pairs (each element is a 2-element list)
+        if obj and isinstance(obj[0], list) and len(obj[0]) == 2:
+            # Convert list-of-pairs back to dict
+            return {str(pair[0]): _from_e_value(pair[1]) for pair in obj}
+        return [_from_e_value(item) for item in obj]
+    return obj
+
+
+def json_keys(obj: Any) -> List[str]:
+    """Get the keys of a JSON object (list-of-pairs)."""
+    if not isinstance(obj, list):
+        raise RuntimeError(
+            "json keys needs a JSON object (a list of pairs), but I got something else."
+        )
+    if obj and isinstance(obj[0], list) and len(obj[0]) == 2:
+        return [str(pair[0]) for pair in obj]
+    raise RuntimeError(
+        "json keys needs a JSON object (a list of pairs), but I got a plain list."
+    )
+
+
+def json_value(obj: Any, key: str) -> Any:
+    """Get a value from a JSON object (list-of-pairs) by key."""
+    if not isinstance(obj, list):
+        raise RuntimeError(
+            "json value needs a JSON object (a list of pairs), but I got something else."
+        )
+    if not isinstance(key, str):
+        raise RuntimeError(
+            f"json value needs a key (text), but I got {type(key).__name__}."
+        )
+    for pair in obj:
+        if isinstance(pair, list) and len(pair) == 2 and pair[0] == key:
+            return pair[1]
+    raise RuntimeError(
+        f"I couldn't find the key \"{key}\" in the JSON object."
+    )
+
+
+
 # --- src/interpreter.py ---
 """Interpreter for the E language.
 
@@ -2570,7 +2862,7 @@ from src.ast_nodes import (
     IndexExpression, SizeExpression, WithAddedExpression,
     TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
     WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
-    ShowWindow, HideWindow, TextOf,
+    ShowWindow, HideWindow, TextOf, TimeoutValuePair,
 )
 from src.environment import Environment
 from src.errors import RuntimeError_, NameError_, TypeError_, SourceLocation
@@ -2717,6 +3009,14 @@ class Interpreter:
             "random": self._builtin_random,
             "uppercase": self._builtin_uppercase,
             "lowercase": self._builtin_lowercase,
+            "get": self._builtin_get,
+            "post": self._builtin_post,
+            "status of": self._builtin_status_of,
+            "body of": self._builtin_body_of,
+            "json of": self._builtin_json_of,
+            "json parse": self._builtin_json_parse,
+            "json keys": self._builtin_json_keys,
+            "json value": self._builtin_json_value,
         }
         for name, fn in self._builtins.items():
             self.global_env.define_function(name, fn)  # type: ignore[arg-type]
@@ -2789,6 +3089,162 @@ class Interpreter:
                 loc,
             )
         return args[0].lower()
+
+    # --- web / JSON builtins ---
+
+    def _builtin_get(self, args, loc):
+        """`get "url"` or `get "url", timeout 5`"""
+        if len(args) < 1 or len(args) > 3:
+            raise TypeError_(
+                f"`get` takes 1 argument (a URL) or 2 (URL, timeout N), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`get` needs a URL (text), but I got {_typename(args[0])}.",
+                loc,
+            )
+        from src.web import http_get, DEFAULT_TIMEOUT
+        timeout = DEFAULT_TIMEOUT
+        if len(args) >= 3:
+            # timeout keyword: args[1] should be "timeout" string, args[2] is the number
+            if args[1] != "timeout":
+                raise TypeError_(
+                    f"`get` expected `timeout` as the second argument, but I got {_typename(args[1])}.",
+                    loc,
+                )
+            timeout = int(_to_number(args[2]))
+        elif len(args) == 2:
+            # timeout keyword: args[0] is URL, args[1] should be "timeout"
+            # Actually with current syntax, this shouldn't happen — url is args[0]
+            # but handle it gracefully
+            raise TypeError_(
+                f"`get` expected `timeout` as the keyword, but I got {_typename(args[1])}.",
+                loc,
+            )
+        return http_get(args[0], timeout=timeout)
+
+    def _builtin_post(self, args, loc):
+        """`post "url"` or `post "url", body` or `post "url", body, timeout 5`"""
+        if len(args) < 1 or len(args) > 4:
+            raise TypeError_(
+                f"`post` takes 1-3 arguments (URL, optional body, optional timeout), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`post` needs a URL (text), but I got {_typename(args[0])}.",
+                loc,
+            )
+        from src.web import http_post, DEFAULT_TIMEOUT
+        body = ""
+        timeout = DEFAULT_TIMEOUT
+        if len(args) == 1:
+            pass  # just URL
+        elif len(args) == 2:
+            # post "url", body
+            body = _to_text(args[1])
+        elif len(args) == 3:
+            # post "url", body, timeout 5  OR  post "url", timeout 5
+            if args[1] == "timeout":
+                timeout = int(_to_number(args[2]))
+            else:
+                body = _to_text(args[1])
+                if args[2] != "timeout":
+                    raise TypeError_(
+                        f"`post` expected `timeout` as the third argument, but I got {_typename(args[2])}.",
+                        loc,
+                    )
+        elif len(args) == 4:
+            # post "url", body, timeout 5
+            body = _to_text(args[1])
+            if args[2] != "timeout":
+                raise TypeError_(
+                    f"`post` expected `timeout` as the third argument, but I got {_typename(args[2])}.",
+                    loc,
+                )
+            timeout = int(_to_number(args[3]))
+        return http_post(args[0], body=body, timeout=timeout)
+
+    def _builtin_status_of(self, args, loc):
+        """`status of resp`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`status of` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import HttpResult
+        if not isinstance(args[0], HttpResult):
+            raise TypeError_(
+                f"`status of` needs a web response, but I got {_typename(args[0])}.",
+                loc,
+            )
+        return args[0].status
+
+    def _builtin_body_of(self, args, loc):
+        """`body of resp`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`body of` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import HttpResult
+        if not isinstance(args[0], HttpResult):
+            raise TypeError_(
+                f"`body of` needs a web response, but I got {_typename(args[0])}.",
+                loc,
+            )
+        return args[0].body
+
+    def _builtin_json_of(self, args, loc):
+        """`json of resp` or `json of list`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`json of` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import json_of, HttpResult
+        return json_of(args[0])
+
+    def _builtin_json_parse(self, args, loc):
+        """`json parse text`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`json parse` takes exactly 1 argument (JSON text), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`json parse` needs text, but I got {_typename(args[0])}.",
+                loc,
+            )
+        from src.web import json_parse
+        return json_parse(args[0])
+
+    def _builtin_json_keys(self, args, loc):
+        """`json keys obj`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`json keys` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import json_keys
+        return json_keys(args[0])
+
+    def _builtin_json_value(self, args, loc):
+        """`json value obj, "key"`"""
+        if len(args) != 2:
+            raise TypeError_(
+                f"`json value` takes exactly 2 arguments (object, key), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[1], str):
+            raise TypeError_(
+                f"`json value` needs a key (text), but I got {_typename(args[1])}.",
+                loc,
+            )
+        from src.web import json_value
+        return json_value(args[0], args[1])
 
     # ---------- statements ----------
 
@@ -3279,7 +3735,15 @@ class Interpreter:
                 e.location,
             )
 
-        args = [self._eval(a, env) for a in e.arguments]
+        # Evaluate arguments. TimeoutValuePair expands to two args:
+        # the keyword string and the value.
+        args = []
+        for a in e.arguments:
+            if isinstance(a, TimeoutValuePair):
+                args.append(a.keyword)
+                args.append(self._eval(a.value, env))
+            else:
+                args.append(self._eval(a, env))
 
         # Built-in first
         if name in self._builtins:

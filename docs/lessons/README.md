@@ -1,6 +1,6 @@
 # E — A Friendly Curriculum
 
-A 16-lesson course for absolute beginners (ages ~10 and up) who want to
+A 19-lesson course for absolute beginners (ages ~10 and up) who want to
 learn to code. The language is E, but the *thinking* you learn here is
 the same thinking Python, JavaScript, and every other language uses.
 
@@ -21,7 +21,7 @@ For each lesson, open two things side by side:
    exactly, runs it, then starts changing it according to the
    challenges in the teacher's guide.
 
-Total time: about 12–18 hours of instruction, depending on pace.
+Total time: about 15–22 hours of instruction, depending on pace.
 
 ## Lessons
 
@@ -33,21 +33,24 @@ Total time: about 12–18 hours of instruction, depending on pace.
 | 3 | [Joining words](./03_strings.md) | The `,` concat operator |
 | 4 | [Doing math](./04_math.md) | `plus`, `minus`, `times`, `divided by`, `mod` |
 | 5 | [Turtle 1 — drawing!](./05_turtle_basics.md) | First drawings with the turtle |
-| 6 | [GUI basics](./06_gui_basics.md) | Windows, buttons, labels, text inputs |
-| 7 | [Making choices](./07_choices.md) | `if`, `else`, comparisons |
-| 8 | [Saying it over and over](./08_loops.md) | `repeat`, `while` |
-| 9 | [Lists](./09_lists.md) | Making collections of things |
-| 10 | [Your own commands](./10_functions.md) | `to ... end`, `return` |
-| 11 | [Functions calling themselves](./11_recursion.md) | Recursion |
-| 12 | [Turtle 2 — pretty patterns](./12_turtle_recursive.md) | Recursive turtle art |
-| 13 | [Advanced GUI](./13_advanced_gui.md) | Events, handlers, turtle control panel |
-| 14 | [Reading error messages](./14_debugging.md) | What to do when things break |
-| 15 | [Planning a small project](./15_project_planning.md) | Combining it all |
-| 16 | [Capstone — tiny adventure](./16_capstone.md) | Build a text adventure game |
+| 6 | [GUI basics](./08_gui_basics.md) | Windows, buttons, labels, text inputs |
+| 7 | [Web requests](./07_web_requests.md) | Fetch data from the internet |
+| 8 | [Making choices](./09_choices.md) | `if`, `else`, comparisons |
+| 9 | [Saying it over and over](./10_loops.md) | `repeat`, `while` |
+| 10 | [Lists](./11_lists.md) | Making collections of things |
+| 11 | [Your own commands](./12_functions.md) | `to ... end`, `return` |
+| 12 | [Functions calling themselves](./13_recursion.md) | Recursion |
+| 13 | [Turtle 2 — pretty patterns](./14_turtle_recursive.md) | Recursive turtle art |
+| 14 | [Advanced GUI](./15_advanced_gui.md) | Events, handlers, turtle control panel |
+| 15 | [Reading error messages](./14_debugging.md) | What to do when things break |
+| 16 | [Planning a small project](./15_project_planning.md) | Combining it all |
+| 17 | [JSON parsing](./17_json_parsing.md) | Working with JSON data |
+| 18 | [Real API project](./18_real_api_project.md) | Build a complete API-powered program |
+| 19 | [Capstone — tiny adventure](./16_capstone.md) | Build a text adventure game |
 
 ## After this
 
-When the student is comfortable with all 16 lessons, they're ready to
+When the student is comfortable with all 19 lessons, they're ready to
 move on to a "real" language. E is designed as a stepping stone between
 visual block programming (Scratch) and text programming. The
 [bridge_to_python.md](../bridge_to_python.md) doc shows how E maps to

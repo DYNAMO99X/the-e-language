@@ -3,7 +3,7 @@
 **Goal:** Take an idea and turn it into a working program, step by
 step. Combine everything you've learned.
 
-**Time:** ~30 minutes. (Then you can start Lesson 16!)
+**Time:** ~30 minutes. (Then you can start Lesson 17!)
 
 ## The problem with big projects
 
@@ -141,7 +141,7 @@ take items, and try to leave."
 - `room` — where they are (just one room for now)
 - `won` — boolean for whether they've won
 
-This is Lesson 16's capstone. Let's just sketch it here:
+This is Lesson 17's capstone. Let's just sketch it here:
 
 ```
 let inventory be [  ]
@@ -183,7 +183,7 @@ say "Goodbye!"
 ```
 
 (That's not perfect, but it's a working tiny version. We can add
-features in Lesson 16.)
+features in Lesson 19.)
 
 ## Tinker
 
@@ -221,4 +221,4 @@ Without looking:
    debug for hours"?
 3. What's one project you'd like to build?
 
-If yes, on to Lesson 16 — your first real project!
+If yes, on to Lesson 19 — your first real project!

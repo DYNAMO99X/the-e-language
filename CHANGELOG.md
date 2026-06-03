@@ -5,6 +5,40 @@ All notable changes to the E language project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-03
+
+### Added
+- Web requests feature: fetch data from the internet
+  - `get "url"` — HTTP GET request
+  - `post "url", body` — HTTP POST request
+  - `status of resp` — HTTP status code (200 = OK)
+  - `body of resp` — response text
+  - `timeout 5` — optional timeout (default 10 seconds)
+- JSON parsing: work with structured data
+  - `json parse text` — convert JSON text to E value
+  - `json of resp` — shorthand for `json parse body of resp`
+  - `json keys obj` — get keys of a JSON object
+  - `json value obj, key` — get a value by key
+  - `json of value` — convert E value back to JSON text
+- JSON objects map to E as list-of-pairs: `[["key", "value"]]`
+- `timeout` keyword with `TimeoutValuePair` AST node for named args
+- `src/web.py` — HTTP GET/POST, JSON helpers (stdlib only: `urllib` + `json`)
+- 20+ new tests for web/JSON features (mocked HTTP)
+- 3 new curriculum lessons (19 total):
+  - Lesson 7: Web Requests (basic `get`/`post`)
+  - Lesson 17: JSON Parsing
+  - Lesson 18: Real API Project
+
+### Changed
+- Curriculum expanded from 16 to 19 lessons
+- Lessons 06–16 renumbered to 08–19 to make room for new lessons
+- All cross-references updated across all lesson files
+
+### Fixed
+- Parser: `_parse_call_arg` now handles `timeout <value>` as named-arg pair via `TimeoutValuePair`
+- Parser: `_parse_ident_or_call` accepts `allow_call` parameter to prevent nested function calls inside call arguments
+- Interpreter: `_eval_call` expands `TimeoutValuePair` to keyword + value args
+
 ## [0.3.0] - 2026-06-03
 
 ### Added

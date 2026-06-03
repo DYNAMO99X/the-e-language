@@ -41,6 +41,18 @@ _MULTI_WORD: dict = {
         (("input",), TokenType.TEXT_INPUT),
         (("of",), TokenType.TEXT_OF),
     ],
+    "status": [
+        (("of",), TokenType.STATUS_OF),
+    ],
+    "body": [
+        (("of",), TokenType.BODY_OF),
+    ],
+    "json": [
+        (("of",), TokenType.JSON_OF),
+        (("parse",), TokenType.JSON_PARSE),
+        (("keys",), TokenType.JSON_KEYS),
+        (("value",), TokenType.JSON_VALUE),
+    ],
 }
 
 # Single-word keywords. Every multi-word starter should ALSO be here, so the
@@ -96,6 +108,8 @@ _KEYWORDS: dict = {
     "row": TokenType.ROW,
     "column": TokenType.COLUMN,
     "do": TokenType.DO,
+    # Web keywords
+    "timeout": TokenType.TIMEOUT,
 }
 
 

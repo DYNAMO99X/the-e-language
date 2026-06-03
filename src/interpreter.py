@@ -15,7 +15,7 @@ from src.ast_nodes import (
     IndexExpression, SizeExpression, WithAddedExpression,
     TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
     WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
-    ShowWindow, HideWindow, TextOf,
+    ShowWindow, HideWindow, TextOf, TimeoutValuePair,
 )
 from src.environment import Environment
 from src.errors import RuntimeError_, NameError_, TypeError_, SourceLocation
@@ -162,6 +162,14 @@ class Interpreter:
             "random": self._builtin_random,
             "uppercase": self._builtin_uppercase,
             "lowercase": self._builtin_lowercase,
+            "get": self._builtin_get,
+            "post": self._builtin_post,
+            "status of": self._builtin_status_of,
+            "body of": self._builtin_body_of,
+            "json of": self._builtin_json_of,
+            "json parse": self._builtin_json_parse,
+            "json keys": self._builtin_json_keys,
+            "json value": self._builtin_json_value,
         }
         for name, fn in self._builtins.items():
             self.global_env.define_function(name, fn)  # type: ignore[arg-type]
@@ -234,6 +242,162 @@ class Interpreter:
                 loc,
             )
         return args[0].lower()
+
+    # --- web / JSON builtins ---
+
+    def _builtin_get(self, args, loc):
+        """`get "url"` or `get "url", timeout 5`"""
+        if len(args) < 1 or len(args) > 3:
+            raise TypeError_(
+                f"`get` takes 1 argument (a URL) or 2 (URL, timeout N), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`get` needs a URL (text), but I got {_typename(args[0])}.",
+                loc,
+            )
+        from src.web import http_get, DEFAULT_TIMEOUT
+        timeout = DEFAULT_TIMEOUT
+        if len(args) >= 3:
+            # timeout keyword: args[1] should be "timeout" string, args[2] is the number
+            if args[1] != "timeout":
+                raise TypeError_(
+                    f"`get` expected `timeout` as the second argument, but I got {_typename(args[1])}.",
+                    loc,
+                )
+            timeout = int(_to_number(args[2]))
+        elif len(args) == 2:
+            # timeout keyword: args[0] is URL, args[1] should be "timeout"
+            # Actually with current syntax, this shouldn't happen — url is args[0]
+            # but handle it gracefully
+            raise TypeError_(
+                f"`get` expected `timeout` as the keyword, but I got {_typename(args[1])}.",
+                loc,
+            )
+        return http_get(args[0], timeout=timeout)
+
+    def _builtin_post(self, args, loc):
+        """`post "url"` or `post "url", body` or `post "url", body, timeout 5`"""
+        if len(args) < 1 or len(args) > 4:
+            raise TypeError_(
+                f"`post` takes 1-3 arguments (URL, optional body, optional timeout), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`post` needs a URL (text), but I got {_typename(args[0])}.",
+                loc,
+            )
+        from src.web import http_post, DEFAULT_TIMEOUT
+        body = ""
+        timeout = DEFAULT_TIMEOUT
+        if len(args) == 1:
+            pass  # just URL
+        elif len(args) == 2:
+            # post "url", body
+            body = _to_text(args[1])
+        elif len(args) == 3:
+            # post "url", body, timeout 5  OR  post "url", timeout 5
+            if args[1] == "timeout":
+                timeout = int(_to_number(args[2]))
+            else:
+                body = _to_text(args[1])
+                if args[2] != "timeout":
+                    raise TypeError_(
+                        f"`post` expected `timeout` as the third argument, but I got {_typename(args[2])}.",
+                        loc,
+                    )
+        elif len(args) == 4:
+            # post "url", body, timeout 5
+            body = _to_text(args[1])
+            if args[2] != "timeout":
+                raise TypeError_(
+                    f"`post` expected `timeout` as the third argument, but I got {_typename(args[2])}.",
+                    loc,
+                )
+            timeout = int(_to_number(args[3]))
+        return http_post(args[0], body=body, timeout=timeout)
+
+    def _builtin_status_of(self, args, loc):
+        """`status of resp`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`status of` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import HttpResult
+        if not isinstance(args[0], HttpResult):
+            raise TypeError_(
+                f"`status of` needs a web response, but I got {_typename(args[0])}.",
+                loc,
+            )
+        return args[0].status
+
+    def _builtin_body_of(self, args, loc):
+        """`body of resp`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`body of` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import HttpResult
+        if not isinstance(args[0], HttpResult):
+            raise TypeError_(
+                f"`body of` needs a web response, but I got {_typename(args[0])}.",
+                loc,
+            )
+        return args[0].body
+
+    def _builtin_json_of(self, args, loc):
+        """`json of resp` or `json of list`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`json of` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import json_of, HttpResult
+        return json_of(args[0])
+
+    def _builtin_json_parse(self, args, loc):
+        """`json parse text`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`json parse` takes exactly 1 argument (JSON text), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[0], str):
+            raise TypeError_(
+                f"`json parse` needs text, but I got {_typename(args[0])}.",
+                loc,
+            )
+        from src.web import json_parse
+        return json_parse(args[0])
+
+    def _builtin_json_keys(self, args, loc):
+        """`json keys obj`"""
+        if len(args) != 1:
+            raise TypeError_(
+                f"`json keys` takes exactly 1 argument, but I got {len(args)}.",
+                loc,
+            )
+        from src.web import json_keys
+        return json_keys(args[0])
+
+    def _builtin_json_value(self, args, loc):
+        """`json value obj, "key"`"""
+        if len(args) != 2:
+            raise TypeError_(
+                f"`json value` takes exactly 2 arguments (object, key), but I got {len(args)}.",
+                loc,
+            )
+        if not isinstance(args[1], str):
+            raise TypeError_(
+                f"`json value` needs a key (text), but I got {_typename(args[1])}.",
+                loc,
+            )
+        from src.web import json_value
+        return json_value(args[0], args[1])
 
     # ---------- statements ----------
 
@@ -724,7 +888,15 @@ class Interpreter:
                 e.location,
             )
 
-        args = [self._eval(a, env) for a in e.arguments]
+        # Evaluate arguments. TimeoutValuePair expands to two args:
+        # the keyword string and the value.
+        args = []
+        for a in e.arguments:
+            if isinstance(a, TimeoutValuePair):
+                args.append(a.keyword)
+                args.append(self._eval(a.value, env))
+            else:
+                args.append(self._eval(a, env))
 
         # Built-in first
         if name in self._builtins:

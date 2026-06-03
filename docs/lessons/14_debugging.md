@@ -184,7 +184,7 @@ end
 <summary>Answer</summary>
 
 `n plus 1` doesn't do anything. It computes the value but doesn't
-store it. It should be `let n be n plus 1`. (This was Lesson 8's
+store it. It should be `let n be n plus 1`. (This was Lesson 9's
 gotcha.)
 </details>
 
@@ -275,4 +275,4 @@ Without looking:
 2. What's the first thing you should do when you see an error?
 3. Why are `say` lines useful for debugging?
 
-If yes, on to Lesson 15 — planning a small project!
+If yes, on to Lesson 16 — planning a small project!

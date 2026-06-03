@@ -47,7 +47,7 @@ from src.ast_nodes import (
     IndexExpression, SizeExpression, WithAddedExpression,
     TurtleLiteral, MoveStatement, MakeStatement, GotoStatement, SetStatement,
     WindowLiteral, WidgetCreate, SetProperty, PlaceWidget, HandleEvent,
-    ShowWindow, HideWindow, TextOf,
+    ShowWindow, HideWindow, TextOf, TimeoutValuePair,
 )
 from src.errors import ParseError, SourceLocation
 
@@ -63,6 +63,14 @@ _EXPR_START: Set[TokenType] = {
     TokenType.LPAREN, TokenType.LBRACKET, TokenType.NOT,
     TokenType.SIZE,  # 'size of X'
     TokenType.TEXT_OF,  # 'text of widget'
+    # Web / JSON multi-word function names
+    TokenType.STATUS_OF,  # 'status of resp'
+    TokenType.BODY_OF,    # 'body of resp'
+    TokenType.JSON_OF,    # 'json of resp'
+    TokenType.JSON_PARSE, # 'json parse text'
+    TokenType.JSON_KEYS,  # 'json keys obj'
+    TokenType.JSON_VALUE, # 'json value obj, key'
+    TokenType.TIMEOUT,    # 'timeout 5' in get/post calls
 }
 
 # Tokens that END a block (no statements after these in the current block).
@@ -520,7 +528,7 @@ class Parser:
             return TextOf(widget=operand, location=op_tok.location)
         return self._parse_primary()
 
-    def _parse_primary(self) -> Optional[object]:
+    def _parse_primary(self, allow_call: bool = True) -> Optional[object]:
         tok = self._peek()
 
         if tok.type == TokenType.NUMBER:
@@ -551,9 +559,18 @@ class Parser:
         if tok.type == TokenType.LBRACKET:
             return self._parse_list_literal()
         if tok.type == TokenType.IDENT:
-            return self._parse_ident_or_call()
+            return self._parse_ident_or_call(allow_call=allow_call)
+        if tok.type == TokenType.TIMEOUT:
+            # 'timeout' in `get "url", timeout 5` — treat as string "timeout"
+            self._advance()
+            return StringLiteral(value="timeout", location=tok.location)
         if tok.type == TokenType.ASK:
             return self._parse_ask()
+        # Web / JSON multi-word function names
+        if tok.type in (TokenType.STATUS_OF, TokenType.BODY_OF,
+                        TokenType.JSON_OF, TokenType.JSON_PARSE,
+                        TokenType.JSON_KEYS, TokenType.JSON_VALUE):
+            return self._parse_web_call()
 
         return None
 
@@ -564,10 +581,41 @@ class Parser:
             raise self._error("After 'ask' I expected a prompt string")
         return CallExpression(callee="ask", arguments=[prompt], location=ask_tok.location)
 
-    def _parse_ident_or_call(self) -> object:
+    def _parse_web_call(self) -> object:
+        """Parse multi-word web/JSON function calls.
+
+        Handles: status of, body of, json of, json parse, json keys, json value
+        The multi-word token is already consumed; we parse the arguments.
+        """
+        tok = self._advance()  # consume the multi-word token
+        callee_map = {
+            TokenType.STATUS_OF: "status of",
+            TokenType.BODY_OF: "body of",
+            TokenType.JSON_OF: "json of",
+            TokenType.JSON_PARSE: "json parse",
+            TokenType.JSON_KEYS: "json keys",
+            TokenType.JSON_VALUE: "json value",
+        }
+        callee = callee_map[tok.type]
+
+        # Parse arguments: single value, or two values separated by comma
+        first = self._parse_call_arg()
+        if first is None:
+            raise self._error(f"After '{callee}' I expected an argument")
+        args = [first]
+        if self._check(TokenType.COMMA):
+            self._advance()
+            second = self._parse_call_arg()
+            if second is None:
+                raise self._error(f"After ',' in '{callee}' I expected a second argument")
+            args.append(second)
+
+        return CallExpression(callee=callee, arguments=args, location=tok.location)
+
+    def _parse_ident_or_call(self, allow_call: bool = True) -> object:
         name_tok = self._advance()  # IDENT
         # Look ahead: if the next token starts an expression, this is a call.
-        if self._peek().type in _EXPR_START:
+        if allow_call and self._peek().type in _EXPR_START:
             # Function call args are SINGLE VALUES (possibly with postfix).
             # Use a restricted parser so the call doesn't greedily eat operators
             # that belong to the surrounding expression. For complex args,
@@ -591,9 +639,22 @@ class Parser:
         It does NOT include binary operators, comparisons, or boolean logic —
         those belong to the surrounding expression. Use parens for complex args.
         """
-        expr = self._parse_primary()
+        expr = self._parse_primary(allow_call=False)
         if expr is None:
             return None
+        # Special case: `timeout <value>` in get/post calls.
+        # The TIMEOUT keyword is parsed as StringLiteral("timeout") by
+        # _parse_primary.  Consume the next primary as the timeout value
+        # and return a TimeoutValuePair so the interpreter can unpack it.
+        if (isinstance(expr, StringLiteral) and expr.value == "timeout"
+                and self._peek().type in _EXPR_START):
+            value = self._parse_primary(allow_call=False)
+            if value is not None:
+                return TimeoutValuePair(
+                    keyword="timeout",
+                    value=value,
+                    location=expr.location,
+                )
         # Postfix `at`
         while self._check(TokenType.AT):
             self._advance()

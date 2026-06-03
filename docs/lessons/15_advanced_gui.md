@@ -1,11 +1,11 @@
-# Lesson 13 — Advanced GUI (events, state, turtle control)
+# Lesson 15 — Advanced GUI (events, state, turtle control)
 
 **Goal:** Make windows that *do* things — buttons that update labels,
 text inputs that get read, and GUI controls that move a turtle.
 
 **Time:** ~35 minutes.
 
-> **This is where GUIs get fun.** In Lesson 6, you made windows that
+> **This is where GUIs get fun.** In Lesson 8, you made windows that
 > looked nice but didn't *do* anything. Now you'll add behavior.
 > Every app you've ever used works this way: something happens when
 > you click a button.
@@ -402,4 +402,4 @@ Without looking:
 3. Why must the handler function be defined *before* the `make` line?
 4. What's the difference between a label and a text input?
 
-If yes, on to Lesson 14 — debugging!
+If yes, on to Lesson 16 — debugging!

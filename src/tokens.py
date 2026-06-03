@@ -96,6 +96,14 @@ class TokenType(Enum):
     COLUMN = auto()        # column  (grid layout)
     DO = auto()            # do      ("make win do on_click when btn clicked")
     TEXT_OF = auto()       # text of ("let val be text of name")
+    # Web / JSON tokens
+    STATUS_OF = auto()     # status of ("say status of resp")
+    BODY_OF = auto()       # body of ("say body of resp")
+    JSON_OF = auto()       # json of ("let data be json of resp")
+    JSON_PARSE = auto()    # json parse ("let obj be json parse text")
+    JSON_KEYS = auto()     # json keys ("let keys be json keys obj")
+    JSON_VALUE = auto()    # json value ("let val be json value obj, key")
+    TIMEOUT = auto()       # timeout keyword ("get url, timeout 5")
 
     # --- Structural ---
     NEWLINE = auto()       # statement separator (optional in many places)

@@ -1,4 +1,4 @@
-# Lesson 9 — Lists (a row of things)
+# Lesson 11 — Lists (a row of things)
 
 **Goal:** Store a bunch of values in one variable.
 
@@ -85,7 +85,7 @@ let pets be pets with "parrot" added
 The phrase `with ... added` puts a new item at the end. Notice the
 order: `with` comes first, then the value, then `added`. Notice we
 have to **store the result back** in `pets`. Just like the counter
-in Lesson 8: `let n be n plus 1` — the new value replaces the old.
+in Lesson 9: `let n be n plus 1` — the new value replaces the old.
 
 After the code above, `pets` is `["dog", "cat", "fish", "hamster",
 "parrot"]`. Its size is 5.
@@ -106,7 +106,7 @@ end
 - Run the loop `size of pets` times.
 - Each time: print the item at position `i`, then add 1 to `i`.
 
-This works but it's clunky. In Lesson 12 (turtle 2) you'll learn a
+This works but it's clunky. In Lesson 14 (turtle 2) you'll learn a
 cleaner way.
 
 ## Tinker
@@ -189,4 +189,4 @@ Without looking:
 3. How do you add an item to a list?
 4. Why do we use a counter and a loop to print a list?
 
-If yes, on to Lesson 10 — your own commands (functions)!
+If yes, on to Lesson 12 — your own commands (functions)!

@@ -362,3 +362,11 @@ class TextOf(Expression):
     """`text of name` — reads the current text value of a widget."""
     widget: Expression
     location: Optional[SourceLocation] = None
+
+
+@dataclass
+class TimeoutValuePair(Expression):
+    """`timeout <value>` pair in get/post calls (keyword arg)."""
+    keyword: str
+    value: Expression
+    location: Optional[SourceLocation] = None

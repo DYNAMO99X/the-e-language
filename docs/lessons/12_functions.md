@@ -1,4 +1,4 @@
-# Lesson 10 — Your own commands (functions)
+# Lesson 12 — Your own commands (functions)
 
 **Goal:** Group code into reusable chunks that you can call by name.
 
@@ -171,7 +171,7 @@ passing it to `triple`.
 
 ### Refactor the tip calculator
 
-Take the Lesson 5 tip calculator and wrap it in a function:
+Take the Lesson 4 tip calculator and wrap it in a function:
 
 ```
 to tip_calculator
@@ -214,4 +214,4 @@ Without looking:
 3. How do you get a value back from a function?
 4. Why are functions useful? (More than one reason is OK.)
 
-If yes, on to Lesson 11 — functions calling themselves (recursion)!
+If yes, on to Lesson 13 — functions calling themselves (recursion)!
